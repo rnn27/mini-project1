@@ -5,18 +5,18 @@
 
 #include <stddef.h>
 
-typedef enum {
+typedef enum{
     REDIR_INPUT,
     REDIR_OUTPUT,
     REDIR_APPEND
 } RedirectionType;
 
-typedef struct {
+typedef struct{
     RedirectionType type;
     char *filename;
 } Redirection;
 
-typedef struct {
+typedef struct{
     char **argv;
     size_t argc;
     size_t argv_capacity;
@@ -30,7 +30,7 @@ typedef struct {
     size_t output_redirection_capacity;
 } Command;
 
-typedef struct {
+typedef struct{
     Command *commands;
     size_t count;
     size_t capacity;
@@ -38,13 +38,13 @@ typedef struct {
     int background;
 } Pipeline;
 
-typedef struct {
+typedef struct{
     Pipeline *pipelines;
     size_t count;
     size_t capacity;
 } CommandList;
 
-typedef enum {
+typedef enum{
     PARSE_SUCCESS,
     PARSE_INVALID_SYNTAX
 } ParseResult;

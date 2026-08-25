@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-typedef enum {
+typedef enum{
     TOKEN_WORD,
     TOKEN_PIPE,
     TOKEN_AMP,
@@ -13,17 +13,17 @@ typedef enum {
     TOKEN_GTGT
 } TokenType;
 
-typedef struct {
+typedef struct{
     TokenType type;
     char *value;
 } Token;
 
-typedef struct {
+typedef struct{
     Token *tokens;
     size_t count;
 } TokenList;
 
-typedef enum {
+typedef enum{
     LEX_SUCCESS,
     LEX_INVALID_SYNTAX
 } LexResult;
