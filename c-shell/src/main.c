@@ -16,13 +16,23 @@ void print_prompt() {
         strcpy(host, "unknown");
     }
 
-    // Check if cwd starts with the shell's home directory
-    if (strncmp(cwd, shell_home, strlen(shell_home)) == 0) {
-        // Replace home prefix with ~
-        printf("<%s@%s:~%s> ", user ? user : "user", host, cwd + strlen(shell_home));
+        size_t home_len = strlen(shell_home);
+
+    if (strcmp(cwd, shell_home) == 0) {
+        printf("<%s@%s:~> ",
+               user ? user : "user",
+               host);
+    } else if (strncmp(cwd, shell_home, home_len) == 0 &&
+               cwd[home_len] == '/') {
+        printf("<%s@%s:~%s> ",
+            user ? user : "user",
+               host,
+               cwd + home_len);
     } else {
-        // Print absolute path
-        printf("<%s@%s:%s> ", user ? user : "user", host, cwd);
+        printf("<%s@%s:%s> ",
+            user ? user : "user",
+               host,
+               cwd);
     }
     fflush(stdout); // Force prompt to print immediately
 }
