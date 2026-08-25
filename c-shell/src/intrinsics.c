@@ -16,19 +16,8 @@ extern char shell_home[PATH_MAX];
 static char previous_directory[PATH_MAX]="";
 static int previous_directory_valid=0;
 
-/*
- * Safely construct:
- *
- *     directory / name
- *
- * without triggering -Wformat-truncation.
- */
-static int join_path(char *result,
-                     size_t result_size,
-                     const char *directory,
-                     const char *name){
-    if(result==NULL ||
-        result_size==0 ||
+static int join_path(char *result,size_t result_size,const char *directory,const char *name){
+    if(result==NULL ||result_size==0 ||
         directory==NULL ||
         name==NULL){
         return -1;
@@ -37,33 +26,22 @@ static int join_path(char *result,
     size_t directory_length=strlen(directory);
     size_t name_length=strlen(name);
 
-    int need_separator=
-        directory_length > 0 &&
-        directory[directory_length - 1] !='/';
+    int need_separator=directory_length > 0 && directory[directory_length - 1] !='/';
 
-    size_t required=
-        directory_length +
-       (size_t)need_separator +
-        name_length +
-        1;
+    size_t required=directory_length +(size_t)need_separator +name_length +1;
 
     if(required > result_size){
         return -1;
     }
 
-    memcpy(result,
-           directory,
-           directory_length);
-
+    memcpy(result,directory,directory_length);
     size_t offset=directory_length;
 
     if(need_separator){
         result[offset++]='/';
     }
 
-    memcpy(result + offset,
-           name,
-           name_length);
+    memcpy(result + offset,name,name_length);
 
     result[offset + name_length]='\0';
 
@@ -71,48 +49,30 @@ static int join_path(char *result,
 }
 
 
-/* B1: hop                                                                  */
-
-
 static int change_directory(const char *path){
     char current_directory[PATH_MAX];
 
-    if(getcwd(current_directory,
-               sizeof(current_directory))==NULL){
-        fprintf(stderr,
-                "hop: no such directory\n");
+    if(getcwd(current_directory,sizeof(current_directory))==NULL){
+        fprintf(stderr,"hop: no such directory\n");
         return -1;
     }
 
     if(chdir(path) < 0){
-        /*
-         * Frecency fallback.
-         */
         char history_file[PATH_MAX];
 
-        if(join_path(history_file,
-                      sizeof(history_file),
-                      shell_home,
-                      ".hop_history") < 0){
-            fprintf(stderr,
-                    "hop: no such directory\n");
+        if(join_path(history_file,sizeof(history_file),shell_home,".hop_history") < 0){
+            fprintf(stderr,"hop: no such directory\n");
             return -1;
         }
 
         FILE *file=fopen(history_file, "r");
 
-        if(file !=NULL){
+        if(file!=NULL){
             char line[PATH_MAX];
 
-            while(fgets(line,
-                         sizeof(line),
-                         file) !=NULL){
-
+            while(fgets(line,sizeof(line),file) !=NULL){
                 line[strcspn(line, "\n")]='\0';
-
-                if(strstr(line, path) !=NULL &&
-                    access(line, F_OK)==0){
-
+                if(strstr(line, path) !=NULL && access(line, F_OK)==0){
                     if(chdir(line)==0){
                         fclose(file);
                         goto success;
@@ -123,8 +83,7 @@ static int change_directory(const char *path){
             fclose(file);
         }
 
-        fprintf(stderr,
-                "hop: no such directory\n");
+        fprintf(stderr,"hop: no such directory\n");
         return -1;
     }
 
@@ -221,14 +180,7 @@ static int execute_reveal(int argc,
     int recursive=0;
     int arg_idx=1;
 
-    /*
-     * Parse flags. Repeated combinations such as:
-     *
-     *     -ta
-     *     -rrrrnnnn
-     *
-     * are accepted.
-     */
+    /*Parse flags.*/
     while(arg_idx < argc &&
            argv[arg_idx][0]=='-'){
 
@@ -441,8 +393,7 @@ static int execute_reveal(int argc,
 /* B3: peek                                                                 */
 
 
-static int execute_peek(int argc,
-                        char *const argv[]){
+static int execute_peek(int argc,char *const argv[]){
     int n_flag=0;
     int r_flag=0;
     int arg_idx=1;
