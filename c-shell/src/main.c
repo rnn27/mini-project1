@@ -1,7 +1,7 @@
 #include "shell.h"
 #include "lexer.h"
 #include "parser.h"
-#include "executor.h"
+#include "execute.h"
 #include "intrinsics.h"
 #include <errno.h>
 char shell_home[PATH_MAX];
