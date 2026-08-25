@@ -19,7 +19,7 @@ static void init_command(Command *command){
 
 static void free_redirections(Redirection *redirections,
                               size_t count){
-    for (size_t i = 0; i < count; i++){
+    for(size_t i = 0; i < count; i++){
         free(redirections[i].filename);
     }
 
@@ -27,11 +27,11 @@ static void free_redirections(Redirection *redirections,
 }
 
 static void free_command(Command *command){
-    if (command == NULL){
+    if(command == NULL){
         return;
     }
 
-    for (size_t i = 0; i < command->argc; i++){
+    for(size_t i = 0; i < command->argc; i++){
         free(command->argv[i]);
     }
 
@@ -47,14 +47,14 @@ static void free_command(Command *command){
 }
 
 void free_command_list(CommandList *command_list){
-    if (command_list == NULL){
+    if(command_list == NULL){
         return;
     }
 
-    for (size_t i = 0; i < command_list->count; i++){
+    for(size_t i = 0; i < command_list->count; i++){
         Pipeline *pipeline = &command_list->pipelines[i];
 
-        for (size_t j = 0; j < pipeline->count; j++){
+        for(size_t j = 0; j < pipeline->count; j++){
             free_command(&pipeline->commands[j]);
         }
 
@@ -69,9 +69,9 @@ void free_command_list(CommandList *command_list){
 }
 
 static int add_pipeline(CommandList *command_list){
-    if (command_list->count >= command_list->capacity){
+    if(command_list->count >= command_list->capacity){
         size_t new_capacity =
-            (command_list->capacity == 0)
+           (command_list->capacity == 0)
                 ? 2
                 : command_list->capacity * 2;
 
@@ -80,7 +80,7 @@ static int add_pipeline(CommandList *command_list){
             new_capacity * sizeof(Pipeline)
         );
 
-        if (new_pipelines == NULL){
+        if(new_pipelines == NULL){
             return 0;
         }
 
@@ -102,9 +102,9 @@ static int add_pipeline(CommandList *command_list){
 }
 
 static int add_command(Pipeline *pipeline){
-    if (pipeline->count >= pipeline->capacity){
+    if(pipeline->count >= pipeline->capacity){
         size_t new_capacity =
-            (pipeline->capacity == 0)
+           (pipeline->capacity == 0)
                 ? 2
                 : pipeline->capacity * 2;
 
@@ -113,7 +113,7 @@ static int add_command(Pipeline *pipeline){
             new_capacity * sizeof(Command)
         );
 
-        if (new_commands == NULL){
+        if(new_commands == NULL){
             return 0;
         }
 
@@ -129,9 +129,9 @@ static int add_command(Pipeline *pipeline){
 
 static int add_argument(Command *command,
                         const char *value){
-    if (command->argc + 1 >= command->argv_capacity){
+    if(command->argc + 1 >= command->argv_capacity){
         size_t new_capacity =
-            (command->argv_capacity == 0)
+           (command->argv_capacity == 0)
                 ? 4
                 : command->argv_capacity * 2;
 
@@ -140,7 +140,7 @@ static int add_argument(Command *command,
             new_capacity * sizeof(char *)
         );
 
-        if (new_argv == NULL){
+        if(new_argv == NULL){
             return 0;
         }
 
@@ -150,7 +150,7 @@ static int add_argument(Command *command,
 
     command->argv[command->argc] = strdup(value);
 
-    if (command->argv[command->argc] == NULL){
+    if(command->argv[command->argc] == NULL){
         return 0;
     }
 
@@ -165,9 +165,9 @@ static int add_redirection(Redirection **redirections,
                            size_t *capacity,
                            RedirectionType type,
                            const char *filename){
-    if (*count >= *capacity){
+    if(*count >= *capacity){
         size_t new_capacity =
-            (*capacity == 0)
+           (*capacity == 0)
                 ? 2
                 : *capacity * 2;
 
@@ -176,7 +176,7 @@ static int add_redirection(Redirection **redirections,
             new_capacity * sizeof(Redirection)
         );
 
-        if (new_redirections == NULL){
+        if(new_redirections == NULL){
             return 0;
         }
 
@@ -184,14 +184,14 @@ static int add_redirection(Redirection **redirections,
         *capacity = new_capacity;
     }
 
-    (*redirections)[*count].type = type;
-    (*redirections)[*count].filename = strdup(filename);
+   (*redirections)[*count].type = type;
+   (*redirections)[*count].filename = strdup(filename);
 
-    if ((*redirections)[*count].filename == NULL){
+    if((*redirections)[*count].filename == NULL){
         return 0;
     }
 
-    (*count)++;
+   (*count)++;
 
     return 1;
 }
@@ -230,7 +230,7 @@ static int parse_redirection(const TokenList *tokens,
                              Command *command){
     TokenType operator = tokens->tokens[*index].type;
 
-    if (*index + 1 >= tokens->count ||
+    if(*index + 1 >= tokens->count ||
         tokens->tokens[*index + 1].type != TOKEN_WORD){
         return 0;
     }
@@ -240,12 +240,12 @@ static int parse_redirection(const TokenList *tokens,
 
     int success;
 
-    if (operator == TOKEN_LT){
+    if(operator == TOKEN_LT){
         success = add_input_redirection(
             command,
             filename
         );
-    } else if (operator == TOKEN_GT){
+    } else if(operator == TOKEN_GT){
         success = add_output_redirection(
             command,
             REDIR_OUTPUT,
@@ -259,7 +259,7 @@ static int parse_redirection(const TokenList *tokens,
         );
     }
 
-    if (!success){
+    if(!success){
         return 0;
     }
 
@@ -271,30 +271,30 @@ static int parse_redirection(const TokenList *tokens,
 static int parse_pipeline(const TokenList *tokens,
                           size_t *index,
                           Pipeline *pipeline){
-    if (!add_command(pipeline)){
+    if(!add_command(pipeline)){
         return 0;
     }
 
     Command *current =
         &pipeline->commands[pipeline->count - 1];
 
-    while (*index < tokens->count){
+    while(*index < tokens->count){
         TokenType type =
             tokens->tokens[*index].type;
 
-        if (type == TOKEN_WORD){
-            if (!add_argument(
+        if(type == TOKEN_WORD){
+            if(!add_argument(
                     current,
                     tokens->tokens[*index].value)){
                 return 0;
             }
 
-            (*index)++;
+           (*index)++;
             continue;
         }
 
-        if (is_redirection(type)){
-            if (!parse_redirection(
+        if(is_redirection(type)){
+            if(!parse_redirection(
                     tokens,
                     index,
                     current)){
@@ -304,19 +304,19 @@ static int parse_pipeline(const TokenList *tokens,
             continue;
         }
 
-        if (type == TOKEN_PIPE){
-            if (current->argc == 0){
+        if(type == TOKEN_PIPE){
+            if(current->argc == 0){
                 return 0;
             }
 
-            (*index)++;
+           (*index)++;
 
-            if (*index >= tokens->count ||
+            if(*index >= tokens->count ||
                 tokens->tokens[*index].type != TOKEN_WORD){
                 return 0;
             }
 
-            if (!add_command(pipeline)){
+            if(!add_command(pipeline)){
                 return 0;
             }
 
@@ -326,23 +326,23 @@ static int parse_pipeline(const TokenList *tokens,
             continue;
         }
 
-        if (type == TOKEN_AMP){
-            if (current->argc == 0){
+        if(type == TOKEN_AMP){
+            if(current->argc == 0){
                 return 0;
             }
 
             pipeline->background = 1;
-            (*index)++;
+           (*index)++;
 
-            if (*index != tokens->count){
+            if(*index != tokens->count){
                 return 0;
             }
 
             return 1;
         }
 
-        if (type == TOKEN_SEMI){
-            if (current->argc == 0){
+        if(type == TOKEN_SEMI){
+            if(current->argc == 0){
                 return 0;
             }
 
@@ -361,19 +361,19 @@ ParseResult parse_tokens(const TokenList *tokens,
     command_list->count = 0;
     command_list->capacity = 0;
 
-    if (tokens == NULL || tokens->count == 0){
+    if(tokens == NULL || tokens->count == 0){
         return PARSE_INVALID_SYNTAX;
     }
 
     size_t index = 0;
 
-    while (index < tokens->count){
-        if (tokens->tokens[index].type == TOKEN_SEMI){
+    while(index < tokens->count){
+        if(tokens->tokens[index].type == TOKEN_SEMI){
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
 
-        if (!add_pipeline(command_list)){
+        if(!add_pipeline(command_list)){
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
@@ -383,7 +383,7 @@ ParseResult parse_tokens(const TokenList *tokens,
                 command_list->count - 1
             ];
 
-        if (!parse_pipeline(
+        if(!parse_pipeline(
                 tokens,
                 &index,
                 pipeline)){
@@ -391,25 +391,25 @@ ParseResult parse_tokens(const TokenList *tokens,
             return PARSE_INVALID_SYNTAX;
         }
 
-        if (index >= tokens->count){
+        if(index >= tokens->count){
             break;
         }
 
-        if (tokens->tokens[index].type != TOKEN_SEMI){
+        if(tokens->tokens[index].type != TOKEN_SEMI){
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
 
         index++;
 
-        if (index >= tokens->count ||
+        if(index >= tokens->count ||
             tokens->tokens[index].type == TOKEN_SEMI){
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
     }
 
-    if (command_list->count == 0){
+    if(command_list->count == 0){
         free_command_list(command_list);
         return PARSE_INVALID_SYNTAX;
     }

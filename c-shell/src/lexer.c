@@ -15,17 +15,17 @@ static int add_token(TokenList *list, TokenType type,
                      const char *value, size_t length){
     Token *new_tokens = realloc(
         list->tokens,
-        (list->count + 1) * sizeof(Token)
+       (list->count + 1) * sizeof(Token)
     );
 
-    if (new_tokens == NULL){
+    if(new_tokens == NULL){
         return 0;
     }
 
     list->tokens = new_tokens;
 
     char *token_value = malloc(length + 1);
-    if (token_value == NULL){
+    if(token_value == NULL){
         return 0;
     }
 
@@ -41,13 +41,13 @@ static int add_token(TokenList *list, TokenType type,
 
 static int add_char(char **buffer, size_t *length,
                     size_t *capacity, char c){
-    if (*length + 1 >= *capacity){
+    if(*length + 1 >= *capacity){
         size_t new_capacity =
-            (*capacity == 0) ? 16 : *capacity * 2;
+           (*capacity == 0) ? 16 : *capacity * 2;
 
         char *new_buffer = realloc(*buffer, new_capacity);
 
-        if (new_buffer == NULL){
+        if(new_buffer == NULL){
             return 0;
         }
 
@@ -55,18 +55,18 @@ static int add_char(char **buffer, size_t *length,
         *capacity = new_capacity;
     }
 
-    (*buffer)[*length] = c;
-    (*length)++;
+   (*buffer)[*length] = c;
+   (*length)++;
 
     return 1;
 }
 
 void free_tokens(TokenList *list){
-    if (list == NULL){
+    if(list == NULL){
         return;
     }
 
-    for (size_t i = 0; i < list->count; i++){
+    for(size_t i = 0; i < list->count; i++){
         free(list->tokens[i].value);
     }
 
@@ -82,12 +82,12 @@ LexResult lex_line(const char *input, TokenList *result){
 
     size_t i = 0;
 
-    while (input[i] != '\0'){
+    while(input[i] != '\0'){
 
         /*
          * Whitespace separates tokens.
          */
-        if (is_space_char(input[i])){
+        if(is_space_char(input[i])){
             i++;
             continue;
         }
@@ -95,8 +95,8 @@ LexResult lex_line(const char *input, TokenList *result){
         /*
          * Single-character operators.
          */
-        if (input[i] == '|'){
-            if (!add_token(result, TOKEN_PIPE, "|", 1)){
+        if(input[i] == '|'){
+            if(!add_token(result, TOKEN_PIPE, "|", 1)){
                 free_tokens(result);
                 return LEX_INVALID_SYNTAX;
             }
@@ -105,8 +105,8 @@ LexResult lex_line(const char *input, TokenList *result){
             continue;
         }
 
-        if (input[i] == '&'){
-            if (!add_token(result, TOKEN_AMP, "&", 1)){
+        if(input[i] == '&'){
+            if(!add_token(result, TOKEN_AMP, "&", 1)){
                 free_tokens(result);
                 return LEX_INVALID_SYNTAX;
             }
@@ -115,8 +115,8 @@ LexResult lex_line(const char *input, TokenList *result){
             continue;
         }
 
-        if (input[i] == ';'){
-            if (!add_token(result, TOKEN_SEMI, ";", 1)){
+        if(input[i] == ';'){
+            if(!add_token(result, TOKEN_SEMI, ";", 1)){
                 free_tokens(result);
                 return LEX_INVALID_SYNTAX;
             }
@@ -125,8 +125,8 @@ LexResult lex_line(const char *input, TokenList *result){
             continue;
         }
 
-        if (input[i] == '<'){
-            if (!add_token(result, TOKEN_LT, "<", 1)){
+        if(input[i] == '<'){
+            if(!add_token(result, TOKEN_LT, "<", 1)){
                 free_tokens(result);
                 return LEX_INVALID_SYNTAX;
             }
@@ -142,16 +142,16 @@ LexResult lex_line(const char *input, TokenList *result){
          *     >>  -> TOKEN_GTGT
          *     >   -> TOKEN_GT
          */
-        if (input[i] == '>'){
-            if (input[i + 1] == '>'){
-                if (!add_token(result, TOKEN_GTGT, ">>", 2)){
+        if(input[i] == '>'){
+            if(input[i + 1] == '>'){
+                if(!add_token(result, TOKEN_GTGT, ">>", 2)){
                     free_tokens(result);
                     return LEX_INVALID_SYNTAX;
                 }
 
                 i += 2;
             } else{
-                if (!add_token(result, TOKEN_GT, ">", 1)){
+                if(!add_token(result, TOKEN_GT, ">", 1)){
                     free_tokens(result);
                     return LEX_INVALID_SYNTAX;
                 }
@@ -183,7 +183,7 @@ LexResult lex_line(const char *input, TokenList *result){
         size_t capacity = 0;
         int word_started = 0;
 
-        while (input[i] != '\0' &&
+        while(input[i] != '\0' &&
                !is_space_char(input[i]) &&
                !is_special_char(input[i])){
 
@@ -194,17 +194,17 @@ LexResult lex_line(const char *input, TokenList *result){
              *
              * A backslash at the end of the input is invalid.
              */
-            if (input[i] == '\\'){
+            if(input[i] == '\\'){
                 word_started = 1;
                 i++;
 
-                if (input[i] == '\0'){
+                if(input[i] == '\0'){
                     free(word);
                     free_tokens(result);
                     return LEX_INVALID_SYNTAX;
                 }
 
-                if (!add_char(&word, &length,
+                if(!add_char(&word, &length,
                               &capacity, input[i])){
                     free(word);
                     free_tokens(result);
@@ -224,25 +224,25 @@ LexResult lex_line(const char *input, TokenList *result){
              *     \\ -> \
              *     \c -> \c  for other characters
              */
-            if (input[i] == '"'){
+            if(input[i] == '"'){
                 word_started = 1;
                 i++;
 
-                while (input[i] != '\0' && input[i] != '"'){
+                while(input[i] != '\0' && input[i] != '"'){
 
-                    if (input[i] == '\\'){
+                    if(input[i] == '\\'){
                         i++;
 
-                        if (input[i] == '\0'){
+                        if(input[i] == '\0'){
                             free(word);
                             free_tokens(result);
                             return LEX_INVALID_SYNTAX;
                         }
 
-                        if (input[i] == '"' ||
+                        if(input[i] == '"' ||
                             input[i] == '\\'){
 
-                            if (!add_char(&word, &length,
+                            if(!add_char(&word, &length,
                                           &capacity, input[i])){
                                 free(word);
                                 free_tokens(result);
@@ -255,14 +255,14 @@ LexResult lex_line(const char *input, TokenList *result){
                              * For \c where c is neither '"' nor '\',
                              * preserve both characters.
                              */
-                            if (!add_char(&word, &length,
+                            if(!add_char(&word, &length,
                                           &capacity, '\\')){
                                 free(word);
                                 free_tokens(result);
                                 return LEX_INVALID_SYNTAX;
                             }
 
-                            if (!add_char(&word, &length,
+                            if(!add_char(&word, &length,
                                           &capacity, input[i])){
                                 free(word);
                                 free_tokens(result);
@@ -273,7 +273,7 @@ LexResult lex_line(const char *input, TokenList *result){
                         i++;
                     } else{
 
-                        if (!add_char(&word, &length,
+                        if(!add_char(&word, &length,
                                       &capacity, input[i])){
                             free(word);
                             free_tokens(result);
@@ -287,7 +287,7 @@ LexResult lex_line(const char *input, TokenList *result){
                 /*
                  * We reached '\0' without finding the closing quote.
                  */
-                if (input[i] != '"'){
+                if(input[i] != '"'){
                     free(word);
                     free_tokens(result);
                     return LEX_INVALID_SYNTAX;
@@ -310,13 +310,13 @@ LexResult lex_line(const char *input, TokenList *result){
              *
              *     a\ b
              */
-            if (input[i] == '\''){
+            if(input[i] == '\''){
                 word_started = 1;
                 i++;
 
-                while (input[i] != '\0' && input[i] != '\''){
+                while(input[i] != '\0' && input[i] != '\''){
 
-                    if (!add_char(&word, &length,
+                    if(!add_char(&word, &length,
                                   &capacity, input[i])){
                         free(word);
                         free_tokens(result);
@@ -330,7 +330,7 @@ LexResult lex_line(const char *input, TokenList *result){
                  * We reached '\0' without finding
                  * the closing single quote.
                  */
-                if (input[i] != '\''){
+                if(input[i] != '\''){
                     free(word);
                     free_tokens(result);
                     return LEX_INVALID_SYNTAX;
@@ -345,7 +345,7 @@ LexResult lex_line(const char *input, TokenList *result){
              */
             word_started = 1;
 
-            if (!add_char(&word, &length,
+            if(!add_char(&word, &length,
                           &capacity, input[i])){
                 free(word);
                 free_tokens(result);
@@ -362,13 +362,13 @@ LexResult lex_line(const char *input, TokenList *result){
          * and whitespace are handled before entering the WORD logic,
          * but it keeps the lexer defensive.
          */
-        if (!word_started){
+        if(!word_started){
             free(word);
             free_tokens(result);
             return LEX_INVALID_SYNTAX;
         }
 
-        if (!add_token(result, TOKEN_WORD, word, length)){
+        if(!add_token(result, TOKEN_WORD, word, length)){
             free(word);
             free_tokens(result);
             return LEX_INVALID_SYNTAX;
