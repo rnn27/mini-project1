@@ -1,0 +1,6 @@
+c-shell/obj/
+c-shell/shell.out
+xv6/*.o
+xv6/*.d
+xv6/*.asm
+xv6/*.sym
