@@ -13,8 +13,8 @@
 
 extern char shell_home[PATH_MAX];
 
-static char previous_directory[PATH_MAX] = "";
-static int previous_directory_valid = 0;
+static char previous_directory[PATH_MAX]="";
+static int previous_directory_valid=0;
 
 /*
  * Safely construct:
@@ -27,21 +27,21 @@ static int join_path(char *result,
                      size_t result_size,
                      const char *directory,
                      const char *name){
-    if(result == NULL ||
-        result_size == 0 ||
-        directory == NULL ||
-        name == NULL){
+    if(result==NULL ||
+        result_size==0 ||
+        directory==NULL ||
+        name==NULL){
         return -1;
     }
 
-    size_t directory_length = strlen(directory);
-    size_t name_length = strlen(name);
+    size_t directory_length=strlen(directory);
+    size_t name_length=strlen(name);
 
-    int need_separator =
+    int need_separator=
         directory_length > 0 &&
-        directory[directory_length - 1] != '/';
+        directory[directory_length - 1] !='/';
 
-    size_t required =
+    size_t required=
         directory_length +
        (size_t)need_separator +
         name_length +
@@ -55,30 +55,30 @@ static int join_path(char *result,
            directory,
            directory_length);
 
-    size_t offset = directory_length;
+    size_t offset=directory_length;
 
     if(need_separator){
-        result[offset++] = '/';
+        result[offset++]='/';
     }
 
     memcpy(result + offset,
            name,
            name_length);
 
-    result[offset + name_length] = '\0';
+    result[offset + name_length]='\0';
 
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* B1: hop                                                                  */
-/* ------------------------------------------------------------------------- */
+
 
 static int change_directory(const char *path){
     char current_directory[PATH_MAX];
 
     if(getcwd(current_directory,
-               sizeof(current_directory)) == NULL){
+               sizeof(current_directory))==NULL){
         fprintf(stderr,
                 "hop: no such directory\n");
         return -1;
@@ -99,21 +99,21 @@ static int change_directory(const char *path){
             return -1;
         }
 
-        FILE *file = fopen(history_file, "r");
+        FILE *file=fopen(history_file, "r");
 
-        if(file != NULL){
+        if(file !=NULL){
             char line[PATH_MAX];
 
             while(fgets(line,
                          sizeof(line),
-                         file) != NULL){
+                         file) !=NULL){
 
-                line[strcspn(line, "\n")] = '\0';
+                line[strcspn(line, "\n")]='\0';
 
-                if(strstr(line, path) != NULL &&
-                    access(line, F_OK) == 0){
+                if(strstr(line, path) !=NULL &&
+                    access(line, F_OK)==0){
 
-                    if(chdir(line) == 0){
+                    if(chdir(line)==0){
                         fclose(file);
                         goto success;
                     }
@@ -135,9 +135,9 @@ success:
                  current_directory) >=
        (int)sizeof(previous_directory)){
 
-        previous_directory_valid = 0;
+        previous_directory_valid=0;
     } else{
-        previous_directory_valid = 1;
+        previous_directory_valid=1;
     }
 
     /*
@@ -146,19 +146,19 @@ success:
     char new_directory[PATH_MAX];
 
     if(getcwd(new_directory,
-               sizeof(new_directory)) != NULL){
+               sizeof(new_directory)) !=NULL){
 
         char history_file[PATH_MAX];
 
         if(join_path(history_file,
                       sizeof(history_file),
                       shell_home,
-                      ".hop_history") == 0){
+                      ".hop_history")==0){
 
-            FILE *file =
+            FILE *file=
                 fopen(history_file, "a");
 
-            if(file != NULL){
+            if(file !=NULL){
                 fprintf(file,
                         "%s\n",
                         new_directory);
@@ -173,23 +173,23 @@ success:
 
 static int execute_hop(int argc,
                        char *const argv[]){
-    if(argc == 1){
+    if(argc==1){
         return change_directory(shell_home);
     }
 
-    for(int i = 1; i < argc; i++){
-        const char *path = argv[i];
+    for(int i=1; i < argc; i++){
+        const char *path=argv[i];
 
-        if(strcmp(path, "~") == 0){
-            path = shell_home;
-        } else if(strcmp(path, "-") == 0){
+        if(strcmp(path, "~")==0){
+            path=shell_home;
+        } else if(strcmp(path, "-")==0){
             if(!previous_directory_valid){
                 fprintf(stderr,
                         "hop: OLDPWD not set\n");
                 return -1;
             }
 
-            path = previous_directory;
+            path=previous_directory;
         }
 
         if(change_directory(path) < 0){
@@ -200,16 +200,16 @@ static int execute_hop(int argc,
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* B2: reveal                                                               */
-/* ------------------------------------------------------------------------- */
+
 
 static int cmp_entries(const void *a,
                        const void *b){
-    const char *const *left =
+    const char *const *left=
        (const char *const *)a;
 
-    const char *const *right =
+    const char *const *right=
        (const char *const *)b;
 
     return strcmp(*left, *right);
@@ -217,9 +217,9 @@ static int cmp_entries(const void *a,
 
 static int execute_reveal(int argc,
                           char *const argv[]){
-    int show_all = 0;
-    int recursive = 0;
-    int arg_idx = 1;
+    int show_all=0;
+    int recursive=0;
+    int arg_idx=1;
 
     /*
      * Parse flags. Repeated combinations such as:
@@ -230,23 +230,23 @@ static int execute_reveal(int argc,
      * are accepted.
      */
     while(arg_idx < argc &&
-           argv[arg_idx][0] == '-'){
+           argv[arg_idx][0]=='-'){
 
         /*
          * A lone "-" is a directory target, not a flag.
          */
-        if(strcmp(argv[arg_idx], "-") == 0){
+        if(strcmp(argv[arg_idx], "-")==0){
             break;
         }
 
-        for(size_t i = 1;
-             argv[arg_idx][i] != '\0';
+        for(size_t i=1;
+             argv[arg_idx][i] !='\0';
              i++){
 
-            if(argv[arg_idx][i] == 'a'){
-                show_all = 1;
-            } else if(argv[arg_idx][i] == 't'){
-                recursive = 1;
+            if(argv[arg_idx][i]=='a'){
+                show_all=1;
+            } else if(argv[arg_idx][i]=='t'){
+                recursive=1;
             } else{
                 fprintf(stderr,
                         "reveal: invalid syntax\n");
@@ -266,14 +266,14 @@ static int execute_reveal(int argc,
         return -1;
     }
 
-    const char *target =
+    const char *target=
        (arg_idx < argc)
             ? argv[arg_idx]
             : ".";
 
     char target_path[PATH_MAX];
 
-    if(strcmp(target, "~") == 0){
+    if(strcmp(target, "~")==0){
         if(snprintf(target_path,
                      sizeof(target_path),
                      "%s",
@@ -283,7 +283,7 @@ static int execute_reveal(int argc,
                     "reveal: no such directory\n");
             return -1;
         }
-    } else if(strcmp(target, "-") == 0){
+    } else if(strcmp(target, "-")==0){
         if(!previous_directory_valid){
             fprintf(stderr,
                     "reveal: no such directory\n");
@@ -311,9 +311,9 @@ static int execute_reveal(int argc,
         }
     }
 
-    DIR *dir = opendir(target_path);
+    DIR *dir=opendir(target_path);
 
-    if(dir == NULL){
+    if(dir==NULL){
         fprintf(stderr,
                 "reveal: no such directory\n");
         return -1;
@@ -321,31 +321,31 @@ static int execute_reveal(int argc,
 
     struct dirent *entry;
 
-    char **entries = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
+    char **entries=NULL;
+    size_t count=0;
+    size_t capacity=0;
 
-    while((entry = readdir(dir)) != NULL){
+    while((entry=readdir(dir)) !=NULL){
         if(!show_all &&
-            entry->d_name[0] == '.'){
+            entry->d_name[0]=='.'){
             continue;
         }
 
-        if(count >= capacity){
-            size_t new_capacity =
-               (capacity == 0)
+        if(count >=capacity){
+            size_t new_capacity=
+               (capacity==0)
                     ? 16
                     : capacity * 2;
 
-            char **new_entries =
+            char **new_entries=
                 realloc(entries,
                         new_capacity *
                             sizeof(char *));
 
-            if(new_entries == NULL){
+            if(new_entries==NULL){
                 closedir(dir);
 
-                for(size_t i = 0;
+                for(size_t i=0;
                      i < count;
                      i++){
                     free(entries[i]);
@@ -356,17 +356,17 @@ static int execute_reveal(int argc,
                 return -1;
             }
 
-            entries = new_entries;
-            capacity = new_capacity;
+            entries=new_entries;
+            capacity=new_capacity;
         }
 
-        entries[count] =
+        entries[count]=
             strdup(entry->d_name);
 
-        if(entries[count] == NULL){
+        if(entries[count]==NULL){
             closedir(dir);
 
-            for(size_t i = 0;
+            for(size_t i=0;
                  i < count;
                  i++){
                 free(entries[i]);
@@ -387,7 +387,7 @@ static int execute_reveal(int argc,
           sizeof(char *),
           cmp_entries);
 
-    for(size_t i = 0;
+    for(size_t i=0;
          i < count;
          i++){
 
@@ -400,22 +400,22 @@ static int execute_reveal(int argc,
             if(join_path(subpath,
                           sizeof(subpath),
                           target_path,
-                          entries[i]) == 0){
+                          entries[i])==0){
 
                 struct stat statbuf;
 
                 if(stat(subpath,
-                         &statbuf) == 0 &&
+                         &statbuf)==0 &&
                     S_ISDIR(statbuf.st_mode)){
 
                     char *sub_argv[4];
 
-                    sub_argv[0] = "reveal";
-                    sub_argv[1] = show_all
+                    sub_argv[0]="reveal";
+                    sub_argv[1]=show_all
                                      ? "-a"
                                      : "";
-                    sub_argv[2] = subpath;
-                    sub_argv[3] = NULL;
+                    sub_argv[2]=subpath;
+                    sub_argv[3]=NULL;
 
                     /*
                      * When recursive mode is active, preserve
@@ -437,28 +437,28 @@ static int execute_reveal(int argc,
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* B3: peek                                                                 */
-/* ------------------------------------------------------------------------- */
+
 
 static int execute_peek(int argc,
                         char *const argv[]){
-    int n_flag = 0;
-    int r_flag = 0;
-    int arg_idx = 1;
+    int n_flag=0;
+    int r_flag=0;
+    int arg_idx=1;
 
     while(arg_idx < argc &&
-           argv[arg_idx][0] == '-' &&
-           strcmp(argv[arg_idx], "-") != 0){
+           argv[arg_idx][0]=='-' &&
+           strcmp(argv[arg_idx], "-") !=0){
 
-        for(size_t i = 1;
-             argv[arg_idx][i] != '\0';
+        for(size_t i=1;
+             argv[arg_idx][i] !='\0';
              i++){
 
-            if(argv[arg_idx][i] == 'n'){
-                n_flag = 1;
-            } else if(argv[arg_idx][i] == 'r'){
-                r_flag = 1;
+            if(argv[arg_idx][i]=='n'){
+                n_flag=1;
+            } else if(argv[arg_idx][i]=='r'){
+                r_flag=1;
             } else{
                 fprintf(stderr,
                         "peek: invalid syntax\n");
@@ -472,13 +472,13 @@ static int execute_peek(int argc,
     /*
      * No filenames means stdin.
      */
-    if(arg_idx == argc){
+    if(arg_idx==argc){
         char line[4096];
-        size_t line_number = 1;
+        size_t line_number=1;
 
         while(fgets(line,
                      sizeof(line),
-                     stdin) != NULL){
+                     stdin) !=NULL){
 
             if(n_flag){
                 printf("%zu ",
@@ -491,20 +491,20 @@ static int execute_peek(int argc,
         return 0;
     }
 
-    for(int file_index = arg_idx;
+    for(int file_index=arg_idx;
          file_index < argc;
          file_index++){
 
-        const char *filename =
+        const char *filename=
             argv[file_index];
 
-        if(strcmp(filename, "-") == 0){
+        if(strcmp(filename, "-")==0){
             char line[4096];
-            size_t line_number = 1;
+            size_t line_number=1;
 
             while(fgets(line,
                          sizeof(line),
-                         stdin) != NULL){
+                         stdin) !=NULL){
 
                 if(n_flag){
                     printf("%zu ",
@@ -517,10 +517,10 @@ static int execute_peek(int argc,
             continue;
         }
 
-        FILE *file =
+        FILE *file=
             fopen(filename, "r");
 
-        if(file == NULL){
+        if(file==NULL){
             fprintf(stderr,
                     "peek: no such file or directory\n");
             continue;
@@ -528,7 +528,7 @@ static int execute_peek(int argc,
 
         struct stat st;
 
-        if(stat(filename, &st) == 0 &&
+        if(stat(filename, &st)==0 &&
             S_ISDIR(st.st_mode)){
 
             fclose(file);
@@ -543,11 +543,11 @@ static int execute_peek(int argc,
          */
         if(!r_flag){
             char line[4096];
-            size_t line_number = 1;
+            size_t line_number=1;
 
             while(fgets(line,
                          sizeof(line),
-                         file) != NULL){
+                         file) !=NULL){
 
                 if(n_flag){
                     printf("%zu ",
@@ -561,29 +561,29 @@ static int execute_peek(int argc,
             continue;
         }
 
-        char **lines = NULL;
-        size_t line_count = 0;
-        size_t line_capacity = 0;
+        char **lines=NULL;
+        size_t line_count=0;
+        size_t line_capacity=0;
 
         char buffer[4096];
 
         while(fgets(buffer,
                      sizeof(buffer),
-                     file) != NULL){
+                     file) !=NULL){
 
-            if(line_count >= line_capacity){
-                size_t new_capacity =
-                   (line_capacity == 0)
+            if(line_count >=line_capacity){
+                size_t new_capacity=
+                   (line_capacity==0)
                         ? 32
                         : line_capacity * 2;
 
-                char **new_lines =
+                char **new_lines=
                     realloc(lines,
                             new_capacity *
                                 sizeof(char *));
 
-                if(new_lines == NULL){
-                    for(size_t i = 0;
+                if(new_lines==NULL){
+                    for(size_t i=0;
                          i < line_count;
                          i++){
                         free(lines[i]);
@@ -595,15 +595,15 @@ static int execute_peek(int argc,
                     return -1;
                 }
 
-                lines = new_lines;
-                line_capacity = new_capacity;
+                lines=new_lines;
+                line_capacity=new_capacity;
             }
 
-            lines[line_count] =
+            lines[line_count]=
                 strdup(buffer);
 
-            if(lines[line_count] == NULL){
-                for(size_t i = 0;
+            if(lines[line_count]==NULL){
+                for(size_t i=0;
                      i < line_count;
                      i++){
                     free(lines[i]);
@@ -625,11 +625,11 @@ static int execute_peek(int argc,
          *
          * Numbering corresponds to the original line numbers.
          */
-        for(size_t i = line_count;
+        for(size_t i=line_count;
              i > 0;
              i--){
 
-            size_t index = i - 1;
+            size_t index=i - 1;
 
             if(n_flag){
                 printf("%zu ",
@@ -640,7 +640,7 @@ static int execute_peek(int argc,
                   stdout);
         }
 
-        for(size_t i = 0;
+        for(size_t i=0;
              i < line_count;
              i++){
             free(lines[i]);
@@ -652,9 +652,9 @@ static int execute_peek(int argc,
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* B4: locate                                                                */
-/* ------------------------------------------------------------------------- */
+
 
 static int execute_locate(int argc,
                           char *const argv[]){
@@ -664,21 +664,21 @@ static int execute_locate(int argc,
         return -1;
     }
 
-    const char *path_env =
+    const char *path_env=
         getenv("PATH");
 
-    if(path_env == NULL){
-        path_env = "";
+    if(path_env==NULL){
+        path_env="";
     }
 
-    for(int i = 1;
+    for(int i=1;
          i < argc;
          i++){
 
-        const char *name =
+        const char *name=
             argv[i];
 
-        int found = 0;
+        int found=0;
 
         /*
          * First check current directory.
@@ -688,70 +688,70 @@ static int execute_locate(int argc,
         if(join_path(local_path,
                       sizeof(local_path),
                       ".",
-                      name) == 0 &&
-            access(local_path, X_OK) == 0){
+                      name)==0 &&
+            access(local_path, X_OK)==0){
 
             char absolute_path[PATH_MAX];
 
             if(realpath(local_path,
-                         absolute_path) != NULL){
+                         absolute_path) !=NULL){
 
                 printf("%s\n",
                        absolute_path);
             } else{
                 printf("%s/%s\n",
-                       getenv("PWD") != NULL
+                       getenv("PWD") !=NULL
                            ? getenv("PWD")
                            : ".",
                        name);
             }
 
-            found = 1;
+            found=1;
         }
 
         /*
          * Search every PATH entry in order.
          */
-        char *path_copy =
+        char *path_copy=
             strdup(path_env);
 
-        if(path_copy == NULL){
+        if(path_copy==NULL){
             return -1;
         }
 
-        char *saveptr = NULL;
+        char *saveptr=NULL;
 
-        char *directory =
+        char *directory=
             strtok_r(path_copy,
                      ":",
                      &saveptr);
 
-        while(directory != NULL){
+        while(directory !=NULL){
             char candidate[PATH_MAX];
 
-            const char *dir =
-                directory[0] == '\0'
+            const char *dir=
+                directory[0]=='\0'
                     ? "."
                     : directory;
 
             if(join_path(candidate,
                           sizeof(candidate),
                           dir,
-                          name) == 0 &&
-                access(candidate, X_OK) == 0){
+                          name)==0 &&
+                access(candidate, X_OK)==0){
 
                 char absolute_path[PATH_MAX];
 
                 if(realpath(candidate,
-                             absolute_path) != NULL){
+                             absolute_path) !=NULL){
 
                     printf("%s\n",
                            absolute_path);
-                    found = 1;
+                    found=1;
                 }
             }
 
-            directory =
+            directory=
                 strtok_r(NULL,
                           ":",
                           &saveptr);
@@ -769,42 +769,42 @@ static int execute_locate(int argc,
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* Intrinsic dispatch                                                        */
-/* ------------------------------------------------------------------------- */
+
 
 int is_intrinsic(const char *command){
-    if(command == NULL){
+    if(command==NULL){
         return 0;
     }
 
-    return strcmp(command, "hop") == 0 ||
-           strcmp(command, "reveal") == 0 ||
-           strcmp(command, "peek") == 0 ||
-           strcmp(command, "locate") == 0;
+    return strcmp(command, "hop")==0 ||
+           strcmp(command, "reveal")==0 ||
+           strcmp(command, "peek")==0 ||
+           strcmp(command, "locate")==0;
 }
 
 int execute_intrinsic(int argc,
                       char *const argv[]){
-    if(argc <= 0 ||
-        argv == NULL ||
-        argv[0] == NULL){
+    if(argc <=0 ||
+        argv==NULL ||
+        argv[0]==NULL){
         return -1;
     }
 
-    if(strcmp(argv[0], "hop") == 0){
+    if(strcmp(argv[0], "hop")==0){
         return execute_hop(argc, argv);
     }
 
-    if(strcmp(argv[0], "reveal") == 0){
+    if(strcmp(argv[0], "reveal")==0){
         return execute_reveal(argc, argv);
     }
 
-    if(strcmp(argv[0], "peek") == 0){
+    if(strcmp(argv[0], "peek")==0){
         return execute_peek(argc, argv);
     }
 
-    if(strcmp(argv[0], "locate") == 0){
+    if(strcmp(argv[0], "locate")==0){
         return execute_locate(argc, argv);
     }
 

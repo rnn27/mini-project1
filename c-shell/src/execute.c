@@ -16,78 +16,59 @@
 static int copy_fd(int source_fd, int destination_fd){
     char buffer[8192];
     while(1){
-        ssize_t bytes_read =
+        ssize_t bytes_read=
             read(source_fd, buffer, sizeof(buffer));
-
-        if(bytes_read == 0){
+        if(bytes_read==0){
             return 0;
         }
-
         if(bytes_read < 0){
-            if(errno == EINTR){
+            if(errno==EINTR){
                 continue;
             }
-
             return -1;
         }
-
-        ssize_t total_written = 0;
-
+        ssize_t total_written=0;
         while(total_written < bytes_read){
-            ssize_t bytes_written =
+            ssize_t bytes_written=
                 write(destination_fd,
                       buffer + total_written,
                      (size_t)(bytes_read - total_written));
 
             if(bytes_written < 0){
-                if(errno == EINTR){
+                if(errno==EINTR){
                     continue;
                 }
 
                 return -1;
             }
 
-            total_written += bytes_written;
+            total_written +=bytes_written;
         }
     }
 }
 
-/* ------------------------------------------------------------------------- */
-/* Input redirection                                                         */
-/* ------------------------------------------------------------------------- */
-
 static int prepare_input_stream(const Command *command){
-    if(command->input_redirection_count == 0){
+    if(command->input_redirection_count==0){
         return -1;
     }
-
-    char template[] = "/tmp/cshell-input-XXXXXX";
-
-    int temp_fd = mkstemp(template);
-
+    char template[]="/tmp/cshell-input-XXXXXX";
+    int temp_fd=mkstemp(template);
     if(temp_fd < 0){
         return -1;
     }
-
     if(unlink(template) < 0){
         close(temp_fd);
         return -1;
     }
 
-    for(size_t i = 0;
-         i < command->input_redirection_count;
-         i++){
-
-        const Redirection *redirection =
+    for(size_t i=0;i < command->input_redirection_count;i++){
+        const Redirection *redirection=
             &command->input_redirections[i];
 
-        int input_fd =
-            open(redirection->filename, O_RDONLY);
+        int input_fd=open(redirection->filename, O_RDONLY);
 
         if(input_fd < 0){
-            fprintf(stderr,
-                    "cshell: no such file or directory\n");
-
+            fprintf(stderr,"cshell: no such file or directory\n");
             close(temp_fd);
             return -1;
         }
@@ -110,12 +91,11 @@ static int prepare_input_stream(const Command *command){
 }
 
 static int setup_input_for_child(const Command *command){
-    if(command->input_redirection_count == 0){
+    if(command->input_redirection_count==0){
         return 0;
     }
 
-    int input_fd =
-        prepare_input_stream(command);
+    int input_fd=prepare_input_stream(command);
 
     if(input_fd < 0){
         return -1;
@@ -131,42 +111,39 @@ static int setup_input_for_child(const Command *command){
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
-/* Output redirection                                                        */
-/* ------------------------------------------------------------------------- */
 
 static int open_output_files(const Command *command,int **fds_out){
-    size_t count =
+    size_t count=
         command->output_redirection_count;
 
-    int *fds =
+    int *fds=
         malloc(count * sizeof(int));
 
-    if(fds == NULL){
+    if(fds==NULL){
         return -1;
     }
 
-    for(size_t i = 0; i < count; i++){
-        const Redirection *redirection =
+    for(size_t i=0; i < count; i++){
+        const Redirection *redirection=
             &command->output_redirections[i];
 
-        int flags =
+        int flags=
             O_WRONLY |
             O_CREAT;
 
-        if(redirection->type == REDIR_OUTPUT){
-            flags |= O_TRUNC;
+        if(redirection->type==REDIR_OUTPUT){
+            flags |=O_TRUNC;
         } else{
-            flags |= O_APPEND;
+            flags |=O_APPEND;
         }
 
-        fds[i] =
+        fds[i]=
             open(redirection->filename,
                  flags,
                  0644);
 
         if(fds[i] < 0){
-            for(size_t j = 0; j < i; j++){
+            for(size_t j=0; j < i; j++){
                 close(fds[j]);
             }
 
@@ -179,7 +156,7 @@ static int open_output_files(const Command *command,int **fds_out){
         }
     }
 
-    *fds_out = fds;
+    *fds_out=fds;
 
     return 0;
 }
@@ -190,52 +167,50 @@ static int relay_output(int read_fd,
     char buffer[8192];
 
     while(1){
-        ssize_t bytes_read =
+        ssize_t bytes_read=
             read(read_fd,
                  buffer,
                  sizeof(buffer));
 
-        if(bytes_read == 0){
+        if(bytes_read==0){
             return 0;
         }
 
         if(bytes_read < 0){
-            if(errno == EINTR){
+            if(errno==EINTR){
                 continue;
             }
 
             return -1;
         }
 
-        for(size_t i = 0;
+        for(size_t i=0;
              i < command->output_redirection_count;
              i++){
 
-            ssize_t total_written = 0;
+            ssize_t total_written=0;
 
             while(total_written < bytes_read){
-                ssize_t bytes_written =
+                ssize_t bytes_written=
                     write(output_fds[i],
                           buffer + total_written,
                          (size_t)(bytes_read - total_written));
 
                 if(bytes_written < 0){
-                    if(errno == EINTR){
+                    if(errno==EINTR){
                         continue;
                     }
 
                     return -1;
                 }
 
-                total_written += bytes_written;
+                total_written +=bytes_written;
             }
         }
     }
 }
 
-/* ------------------------------------------------------------------------- */
 /* C1 command resolution                                                     */
-/* ------------------------------------------------------------------------- */
 
 static int is_regular_executable(const char *path){
     struct stat st;
@@ -248,21 +223,21 @@ static int is_regular_executable(const char *path){
         return 0;
     }
 
-    return access(path, X_OK) == 0;
+    return access(path, X_OK)==0;
 }
 
 static void execute_command(const Command *command){
-    const char *original =
+    const char *original=
         command->argv[0];
-    if(original == NULL ||
-        original[0] == '\0'){
+    if(original==NULL ||
+        original[0]=='\0'){
         _exit(127);
     }
 
     // --- ADD THIS BLOCK ---
     if(is_intrinsic(original)){
-        int result = execute_intrinsic((int)command->argc, command->argv);
-        _exit(result == 0 ? 0 : 1);
+        int result=execute_intrinsic((int)command->argc, command->argv);
+        _exit(result==0 ? 0 : 1);
     }
     // ----------------------
 
@@ -279,39 +254,39 @@ static void execute_command(const Command *command){
      * the parsed command structure. Create a small replacement
      * argv instead.
      */
-    if(original[0] == '%'){
-        const char *name =
+    if(original[0]=='%'){
+        const char *name=
             original + 1;
 
-        if(name[0] == '\0'){
+        if(name[0]=='\0'){
             fprintf(stderr,
                     "cshell: command not found()\n");
             _exit(127);
         }
 
-        char **exec_argv =
+        char **exec_argv=
             malloc((command->argc + 1) *
                    sizeof(char *));
 
-        if(exec_argv == NULL){
+        if(exec_argv==NULL){
             perror("cshell: malloc");
             _exit(127);
         }
 
-        for(size_t i = 0;
+        for(size_t i=0;
              i < command->argc;
              i++){
-            exec_argv[i] =
+            exec_argv[i]=
                 command->argv[i];
         }
 
-        exec_argv[command->argc] = NULL;
+        exec_argv[command->argc]=NULL;
 
         /*
          * argv[0] seen by the program is the actual command name,
          * not the '%' prefix.
          */
-        exec_argv[0] =(char *)name;
+        exec_argv[0]=(char *)name;
 
         execvp(name, exec_argv);
 
@@ -326,8 +301,8 @@ static void execute_command(const Command *command){
     /*
      * If the name contains '/', treat it as a literal path.
      */
-    if(strchr(original, '/') != NULL){
-        if(access(original, X_OK) == 0){
+    if(strchr(original, '/') !=NULL){
+        if(access(original, X_OK)==0){
             execv(original, command->argv);
         }
 
@@ -343,13 +318,13 @@ static void execute_command(const Command *command){
      */
     char local_path[PATH_MAX];
 
-    int written =
+    int written=
         snprintf(local_path,
                  sizeof(local_path),
                  "./%s",
                  original);
 
-    if(written >= 0 &&
+    if(written >=0 &&
        (size_t)written < sizeof(local_path) &&
         is_regular_executable(local_path)){
 
@@ -370,15 +345,15 @@ static void execute_command(const Command *command){
     _exit(127);
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* Waiting                                                                    */
-/* ------------------------------------------------------------------------- */
+
 
 static int wait_for_pid(pid_t pid){
     int status;
 
     while(waitpid(pid, &status, 0) < 0){
-        if(errno == EINTR){
+        if(errno==EINTR){
             continue;
         }
 
@@ -389,15 +364,15 @@ static int wait_for_pid(pid_t pid){
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* Single command                                                             */
-/* ------------------------------------------------------------------------- */
+
 
 static int execute_simple_command(const Command *command){
-    int input_fd = -1;
+    int input_fd=-1;
 
     if(command->input_redirection_count > 0){
-        input_fd =
+        input_fd=
             prepare_input_stream(command);
 
         if(input_fd < 0){
@@ -405,13 +380,13 @@ static int execute_simple_command(const Command *command){
         }
     }
 
-    int *output_fds = NULL;
+    int *output_fds=NULL;
 
     if(command->output_redirection_count > 0){
         if(open_output_files(command,
                               &output_fds) < 0){
 
-            if(input_fd >= 0){
+            if(input_fd >=0){
                 close(input_fd);
             }
 
@@ -419,7 +394,7 @@ static int execute_simple_command(const Command *command){
         }
     }
 
-    int output_pipe[2] ={-1, -1};
+    int output_pipe[2]={-1, -1};
 
     /*
      * A relay pipe is used so the parent can fan the command's
@@ -429,7 +404,7 @@ static int execute_simple_command(const Command *command){
         if(pipe(output_pipe) < 0){
             perror("cshell: pipe");
 
-            for(size_t i = 0;
+            for(size_t i=0;
                  i < command->output_redirection_count;
                  i++){
                 close(output_fds[i]);
@@ -437,7 +412,7 @@ static int execute_simple_command(const Command *command){
 
             free(output_fds);
 
-            if(input_fd >= 0){
+            if(input_fd >=0){
                 close(input_fd);
             }
 
@@ -445,17 +420,17 @@ static int execute_simple_command(const Command *command){
         }
     }
 
-    pid_t pid = fork();
+    pid_t pid=fork();
 
     if(pid < 0){
         perror("cshell: fork");
 
-        if(output_pipe[0] >= 0){
+        if(output_pipe[0] >=0){
             close(output_pipe[0]);
             close(output_pipe[1]);
         }
 
-        for(size_t i = 0;
+        for(size_t i=0;
              i < command->output_redirection_count;
              i++){
             close(output_fds[i]);
@@ -463,18 +438,18 @@ static int execute_simple_command(const Command *command){
 
         free(output_fds);
 
-        if(input_fd >= 0){
+        if(input_fd >=0){
             close(input_fd);
         }
 
         return -1;
     }
 
-    if(pid == 0){
+    if(pid==0){
         /*
          * Child input.
          */
-        if(input_fd >= 0){
+        if(input_fd >=0){
             if(dup2(input_fd,
                      STDIN_FILENO) < 0){
                 _exit(1);
@@ -508,7 +483,7 @@ static int execute_simple_command(const Command *command){
     /*
      * Parent.
      */
-    if(input_fd >= 0){
+    if(input_fd >=0){
         close(input_fd);
     }
 
@@ -521,7 +496,7 @@ static int execute_simple_command(const Command *command){
 
             close(output_pipe[0]);
 
-            for(size_t i = 0;
+            for(size_t i=0;
                  i < command->output_redirection_count;
                  i++){
                 close(output_fds[i]);
@@ -536,7 +511,7 @@ static int execute_simple_command(const Command *command){
 
         close(output_pipe[0]);
 
-        for(size_t i = 0;
+        for(size_t i=0;
              i < command->output_redirection_count;
              i++){
             close(output_fds[i]);
@@ -548,36 +523,36 @@ static int execute_simple_command(const Command *command){
     return wait_for_pid(pid);
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* Pipeline                                                                   */
-/* ------------------------------------------------------------------------- */
+
 
 static int execute_pipeline(const Pipeline *pipeline){
-    size_t command_count =
+    size_t command_count=
         pipeline->count;
 
-    if(command_count == 0){
+    if(command_count==0){
         return -1;
     }
 
-    if(command_count == 1){
+    if(command_count==1){
         return execute_simple_command(
             &pipeline->commands[0]);
     }
 
-    size_t pipe_count =
+    size_t pipe_count=
         command_count - 1;
 
-    int(*pipes)[2] =
+    int(*pipes)[2]=
         malloc(pipe_count *
                sizeof(*pipes));
 
-    pid_t *pids =
+    pid_t *pids=
         malloc(command_count *
                sizeof(pid_t));
 
-    if(pipes == NULL ||
-        pids == NULL){
+    if(pipes==NULL ||
+        pids==NULL){
 
         free(pipes);
         free(pids);
@@ -589,14 +564,14 @@ static int execute_pipeline(const Pipeline *pipeline){
     /*
      * Create all pipes before forking.
      */
-    for(size_t i = 0;
+    for(size_t i=0;
          i < pipe_count;
          i++){
 
         if(pipe(pipes[i]) < 0){
             perror("cshell: pipe");
 
-            for(size_t j = 0;
+            for(size_t j=0;
                  j < i;
                  j++){
                 close(pipes[j][0]);
@@ -613,23 +588,23 @@ static int execute_pipeline(const Pipeline *pipeline){
     /*
      * Fork each stage.
      */
-    for(size_t i = 0;
+    for(size_t i=0;
          i < command_count;
          i++){
 
-        pid_t pid = fork();
+        pid_t pid=fork();
 
         if(pid < 0){
             perror("cshell: fork");
 
-            for(size_t j = 0;
+            for(size_t j=0;
                  j < pipe_count;
                  j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
-            for(size_t j = 0;
+            for(size_t j=0;
                  j < i;
                  j++){
                (void)wait_for_pid(pids[j]);
@@ -641,10 +616,10 @@ static int execute_pipeline(const Pipeline *pipeline){
             return -1;
         }
 
-        pids[i] = pid;
+        pids[i]=pid;
 
-        if(pid == 0){
-            const Command *command =
+        if(pid==0){
+            const Command *command=
                 &pipeline->commands[i];
 
             /*
@@ -684,10 +659,10 @@ static int execute_pipeline(const Pipeline *pipeline){
              * Fan-out is handled with a small child-side relay:
              * stdout -> relay pipe -> every output file.
              */
-            if(i == command_count - 1 &&
+            if(i==command_count - 1 &&
                 command->output_redirection_count > 0){
 
-                int *output_fds = NULL;
+                int *output_fds=NULL;
 
                 if(open_output_files(command,
                                       &output_fds) < 0){
@@ -697,7 +672,7 @@ static int execute_pipeline(const Pipeline *pipeline){
                 int output_pipe[2];
 
                 if(pipe(output_pipe) < 0){
-                    for(size_t j = 0;
+                    for(size_t j=0;
                          j < command->output_redirection_count;
                          j++){
                         close(output_fds[j]);
@@ -707,14 +682,14 @@ static int execute_pipeline(const Pipeline *pipeline){
                     _exit(1);
                 }
 
-                pid_t relay_pid =
+                pid_t relay_pid=
                     fork();
 
                 if(relay_pid < 0){
                     close(output_pipe[0]);
                     close(output_pipe[1]);
 
-                    for(size_t j = 0;
+                    for(size_t j=0;
                          j < command->output_redirection_count;
                          j++){
                         close(output_fds[j]);
@@ -724,17 +699,17 @@ static int execute_pipeline(const Pipeline *pipeline){
                     _exit(1);
                 }
 
-                if(relay_pid == 0){
+                if(relay_pid==0){
                     close(output_pipe[1]);
 
-                    int relay_result =
+                    int relay_result=
                         relay_output(output_pipe[0],
                                      command,
                                      output_fds);
 
                     close(output_pipe[0]);
 
-                    for(size_t j = 0;
+                    for(size_t j=0;
                          j < command->output_redirection_count;
                          j++){
                         close(output_fds[j]);
@@ -742,7 +717,7 @@ static int execute_pipeline(const Pipeline *pipeline){
 
                     free(output_fds);
 
-                    _exit(relay_result == 0 ? 0 : 1);
+                    _exit(relay_result==0 ? 0 : 1);
                 }
 
                 close(output_pipe[0]);
@@ -766,7 +741,7 @@ static int execute_pipeline(const Pipeline *pipeline){
             /*
              * Close all inherited pipeline descriptors.
              */
-            for(size_t j = 0;
+            for(size_t j=0;
                  j < pipe_count;
                  j++){
                 close(pipes[j][0]);
@@ -782,7 +757,7 @@ static int execute_pipeline(const Pipeline *pipeline){
     /*
      * Parent closes all pipe descriptors.
      */
-    for(size_t i = 0;
+    for(size_t i=0;
          i < pipe_count;
          i++){
         close(pipes[i][0]);
@@ -792,14 +767,14 @@ static int execute_pipeline(const Pipeline *pipeline){
     /*
      * Foreground pipeline: wait for every stage.
      */
-    int result = 0;
+    int result=0;
 
-    for(size_t i = 0;
+    for(size_t i=0;
          i < command_count;
          i++){
 
         if(wait_for_pid(pids[i]) < 0){
-            result = -1;
+            result=-1;
         }
     }
 
@@ -809,14 +784,14 @@ static int execute_pipeline(const Pipeline *pipeline){
     return result;
 }
 
-/* ------------------------------------------------------------------------- */
+
 /* Command list                                                              */
-/* ------------------------------------------------------------------------- */
+
 
 int execute_command_list(
     const CommandList *command_list){
-    if(command_list == NULL ||
-        command_list->count == 0){
+    if(command_list==NULL ||
+        command_list->count==0){
         return 0;
     }
 
