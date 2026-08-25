@@ -9,11 +9,23 @@ static void init_command(Command *command)
     command->argc = 0;
     command->argv_capacity = 0;
 
-    command->input_redirection = REDIR_NONE;
-    command->input_file = NULL;
+    command->input_redirections = NULL;
+    command->input_redirection_count = 0;
+    command->input_redirection_capacity = 0;
 
-    command->output_redirection = REDIR_NONE;
-    command->output_file = NULL;
+    command->output_redirections = NULL;
+    command->output_redirection_count = 0;
+    command->output_redirection_capacity = 0;
+}
+
+static void free_redirections(Redirection *redirections,
+                              size_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        free(redirections[i].filename);
+    }
+
+    free(redirections);
 }
 
 static void free_command(Command *command)
@@ -27,8 +39,12 @@ static void free_command(Command *command)
     }
 
     free(command->argv);
-    free(command->input_file);
-    free(command->output_file);
+
+    free_redirections(command->input_redirections,
+                      command->input_redirection_count);
+
+    free_redirections(command->output_redirections,
+                      command->output_redirection_count);
 
     init_command(command);
 }
@@ -117,7 +133,8 @@ static int add_command(Pipeline *pipeline)
     return 1;
 }
 
-static int add_argument(Command *command, const char *value)
+static int add_argument(Command *command,
+                        const char *value)
 {
     if (command->argc + 1 >= command->argv_capacity) {
         size_t new_capacity =
@@ -145,10 +162,71 @@ static int add_argument(Command *command, const char *value)
     }
 
     command->argc++;
-
     command->argv[command->argc] = NULL;
 
     return 1;
+}
+
+static int add_redirection(Redirection **redirections,
+                           size_t *count,
+                           size_t *capacity,
+                           RedirectionType type,
+                           const char *filename)
+{
+    if (*count >= *capacity) {
+        size_t new_capacity =
+            (*capacity == 0)
+                ? 2
+                : *capacity * 2;
+
+        Redirection *new_redirections = realloc(
+            *redirections,
+            new_capacity * sizeof(Redirection)
+        );
+
+        if (new_redirections == NULL) {
+            return 0;
+        }
+
+        *redirections = new_redirections;
+        *capacity = new_capacity;
+    }
+
+    (*redirections)[*count].type = type;
+    (*redirections)[*count].filename = strdup(filename);
+
+    if ((*redirections)[*count].filename == NULL) {
+        return 0;
+    }
+
+    (*count)++;
+
+    return 1;
+}
+
+static int add_input_redirection(Command *command,
+                                  const char *filename)
+{
+    return add_redirection(
+        &command->input_redirections,
+        &command->input_redirection_count,
+        &command->input_redirection_capacity,
+        REDIR_INPUT,
+        filename
+    );
+}
+
+static int add_output_redirection(Command *command,
+                                  RedirectionType type,
+                                  const char *filename)
+{
+    return add_redirection(
+        &command->output_redirections,
+        &command->output_redirection_count,
+        &command->output_redirection_capacity,
+        type,
+        filename
+    );
 }
 
 static int is_redirection(TokenType type)
@@ -158,44 +236,48 @@ static int is_redirection(TokenType type)
            type == TOKEN_GTGT;
 }
 
-static int set_redirection(Command *command,
-                           TokenType operator,
-                           const char *filename)
+static int parse_redirection(const TokenList *tokens,
+                             size_t *index,
+                             Command *command)
 {
+    TokenType operator = tokens->tokens[*index].type;
+
+    if (*index + 1 >= tokens->count ||
+        tokens->tokens[*index + 1].type != TOKEN_WORD) {
+        return 0;
+    }
+
+    const char *filename =
+        tokens->tokens[*index + 1].value;
+
+    int success;
+
     if (operator == TOKEN_LT) {
-        if (command->input_redirection != REDIR_NONE) {
-            return 0;
-        }
-
-        command->input_redirection = REDIR_INPUT;
-        command->input_file = strdup(filename);
-
-        return command->input_file != NULL;
+        success = add_input_redirection(
+            command,
+            filename
+        );
+    } else if (operator == TOKEN_GT) {
+        success = add_output_redirection(
+            command,
+            REDIR_OUTPUT,
+            filename
+        );
+    } else {
+        success = add_output_redirection(
+            command,
+            REDIR_APPEND,
+            filename
+        );
     }
 
-    if (operator == TOKEN_GT) {
-        if (command->output_redirection != REDIR_NONE) {
-            return 0;
-        }
-
-        command->output_redirection = REDIR_OUTPUT;
-        command->output_file = strdup(filename);
-
-        return command->output_file != NULL;
+    if (!success) {
+        return 0;
     }
 
-    if (operator == TOKEN_GTGT) {
-        if (command->output_redirection != REDIR_NONE) {
-            return 0;
-        }
+    *index += 2;
 
-        command->output_redirection = REDIR_APPEND;
-        command->output_file = strdup(filename);
-
-        return command->output_file != NULL;
-    }
-
-    return 0;
+    return 1;
 }
 
 static int parse_pipeline(const TokenList *tokens,
@@ -210,14 +292,13 @@ static int parse_pipeline(const TokenList *tokens,
         &pipeline->commands[pipeline->count - 1];
 
     while (*index < tokens->count) {
-        TokenType type = tokens->tokens[*index].type;
-        const char *value = tokens->tokens[*index].value;
+        TokenType type =
+            tokens->tokens[*index].type;
 
-        /*
-         * WORD
-         */
         if (type == TOKEN_WORD) {
-            if (!add_argument(current, value)) {
+            if (!add_argument(
+                    current,
+                    tokens->tokens[*index].value)) {
                 return 0;
             }
 
@@ -225,33 +306,17 @@ static int parse_pipeline(const TokenList *tokens,
             continue;
         }
 
-        /*
-         * Redirection:
-         *
-         *     < WORD
-         *     > WORD
-         *     >> WORD
-         */
         if (is_redirection(type)) {
-            if (*index + 1 >= tokens->count ||
-                tokens->tokens[*index + 1].type != TOKEN_WORD) {
+            if (!parse_redirection(
+                    tokens,
+                    index,
+                    current)) {
                 return 0;
             }
 
-            if (!set_redirection(
-                    current,
-                    type,
-                    tokens->tokens[*index + 1].value)) {
-                return 0;
-            }
-
-            *index += 2;
             continue;
         }
 
-        /*
-         * Pipe.
-         */
         if (type == TOKEN_PIPE) {
             if (current->argc == 0) {
                 return 0;
@@ -274,32 +339,21 @@ static int parse_pipeline(const TokenList *tokens,
             continue;
         }
 
-        /*
- * Background execution.
- *
- * '&' must be the final token of the complete input line.
- */
-if (type == TOKEN_AMP) {
-    if (current->argc == 0) {
-        return 0;
-    }
+        if (type == TOKEN_AMP) {
+            if (current->argc == 0) {
+                return 0;
+            }
 
-    pipeline->background = 1;
-    (*index)++;
+            pipeline->background = 1;
+            (*index)++;
 
-    /*
-     * '&' must be the final token.
-     */
-    if (*index != tokens->count) {
-        return 0;
-    }
+            if (*index != tokens->count) {
+                return 0;
+            }
 
-    return 1;
-}
+            return 1;
+        }
 
-        /*
-         * End of this pipeline.
-         */
         if (type == TOKEN_SEMI) {
             if (current->argc == 0) {
                 return 0;
@@ -308,9 +362,6 @@ if (type == TOKEN_AMP) {
             return 1;
         }
 
-        /*
-         * Anything else is invalid.
-         */
         return 0;
     }
 
@@ -331,9 +382,6 @@ ParseResult parse_tokens(const TokenList *tokens,
     size_t index = 0;
 
     while (index < tokens->count) {
-        /*
-         * A command list cannot start with ';'.
-         */
         if (tokens->tokens[index].type == TOKEN_SEMI) {
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
@@ -345,36 +393,29 @@ ParseResult parse_tokens(const TokenList *tokens,
         }
 
         Pipeline *pipeline =
-            &command_list->pipelines[command_list->count - 1];
+            &command_list->pipelines[
+                command_list->count - 1
+            ];
 
-        if (!parse_pipeline(tokens, &index, pipeline)) {
+        if (!parse_pipeline(
+                tokens,
+                &index,
+                pipeline)) {
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
 
-        /*
-         * If we've consumed everything, we're done.
-         */
         if (index >= tokens->count) {
             break;
         }
 
-        /*
-         * The only token allowed between pipelines is ';'.
-         */
         if (tokens->tokens[index].type != TOKEN_SEMI) {
             free_command_list(command_list);
             return PARSE_INVALID_SYNTAX;
         }
 
-        /*
-         * Consume ';'.
-         */
         index++;
 
-        /*
-         * A semicolon must be followed by another command.
-         */
         if (index >= tokens->count ||
             tokens->tokens[index].type == TOKEN_SEMI) {
             free_command_list(command_list);

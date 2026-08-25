@@ -6,22 +6,28 @@
 #include <stddef.h>
 
 typedef enum {
-    REDIR_NONE,
     REDIR_INPUT,
     REDIR_OUTPUT,
     REDIR_APPEND
 } RedirectionType;
 
 typedef struct {
+    RedirectionType type;
+    char *filename;
+} Redirection;
+
+typedef struct {
     char **argv;
     size_t argc;
     size_t argv_capacity;
 
-    RedirectionType input_redirection;
-    char *input_file;
+    Redirection *input_redirections;
+    size_t input_redirection_count;
+    size_t input_redirection_capacity;
 
-    RedirectionType output_redirection;
-    char *output_file;
+    Redirection *output_redirections;
+    size_t output_redirection_count;
+    size_t output_redirection_capacity;
 } Command;
 
 typedef struct {
