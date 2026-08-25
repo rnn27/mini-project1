@@ -2,8 +2,13 @@
 #include "lexer.h"
 #include "parser.h"
 #include "executor.h"
+#include "intrinsics.h"
 
-// Global to store the directory where the shell was launched.
+#include <errno.h>
+
+/*
+ * The directory where the shell was launched.
+ */
 char shell_home[PATH_MAX];
 
 void print_prompt(void)
@@ -47,8 +52,7 @@ int main(void)
 {
     /*
      * A1:
-     * The directory from which the shell is launched becomes
-     * the shell's home directory.
+     * The directory where the shell starts becomes its home.
      */
     if (getcwd(shell_home, sizeof(shell_home)) == NULL) {
         perror("Fatal: could not get initial directory");
@@ -57,7 +61,7 @@ int main(void)
 
     /*
      * A2:
-     * Read one command line at a time.
+     * Read one line at a time.
      */
     char input[SHELL_MAX_INPUT];
 
@@ -73,12 +77,12 @@ int main(void)
         }
 
         /*
-         * Remove the trailing newline inserted by fgets().
+         * Remove trailing newline.
          */
         input[strcspn(input, "\n")] = '\0';
 
         /*
-         * Ignore empty input lines.
+         * Ignore empty lines.
          */
         if (input[0] == '\0') {
             continue;
@@ -86,21 +90,26 @@ int main(void)
 
         /*
          * A3:
-         * Lex the complete input line before any execution.
+         * Lex the complete command line.
          */
         TokenList tokens;
 
-        LexResult result = lex_line(input, &tokens);
+        LexResult lex_result =
+            lex_line(input, &tokens);
 
-        if (result == LEX_INVALID_SYNTAX) {
+        if (lex_result == LEX_INVALID_SYNTAX) {
             printf("cshell: invalid syntax\n");
             continue;
         }
 
-                CommandList command_list;
+        /*
+         * Parse the complete command line.
+         */
+        CommandList command_list;
 
         ParseResult parse_result =
-            parse_tokens(&tokens, &command_list);
+            parse_tokens(&tokens,
+                         &command_list);
 
         if (parse_result == PARSE_INVALID_SYNTAX) {
             printf("cshell: invalid syntax\n");
@@ -108,7 +117,42 @@ int main(void)
             continue;
         }
 
-        execute_command_list(&command_list);
+        /*
+         * B1:
+         *
+         * Intrinsics must execute inside the shell process.
+         *
+         * In particular, hop must call chdir() in this process;
+         * executing it in a forked child would not change the
+         * shell's working directory.
+         *
+         * For this first intrinsic implementation, only a
+         * standalone command is handled here.
+         */
+        if (command_list.count == 1 &&
+            command_list.pipelines[0].count == 1) {
+
+            Command *command =
+                &command_list.pipelines[0].commands[0];
+
+            if (command->argc > 0 &&
+                is_intrinsic(command->argv[0])) {
+
+                (void)execute_intrinsic(
+                    (int)command->argc,
+                    command->argv
+                );
+
+                free_command_list(&command_list);
+                free_tokens(&tokens);
+                continue;
+            }
+        }
+
+        /*
+         * Normal external command execution.
+         */
+        (void)execute_command_list(&command_list);
 
         free_command_list(&command_list);
         free_tokens(&tokens);
