@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "lexer.h"
 #include "parser.h"
+#include "executor.h"
 
 // Global to store the directory where the shell was launched.
 char shell_home[PATH_MAX];
@@ -96,23 +97,21 @@ int main(void)
             continue;
         }
 
-        CommandList command_list;
+                CommandList command_list;
 
-ParseResult parse_result =
-    parse_tokens(&tokens, &command_list);
+        ParseResult parse_result =
+            parse_tokens(&tokens, &command_list);
 
-if (parse_result == PARSE_INVALID_SYNTAX) {
-    printf("cshell: invalid syntax\n");
-    free_tokens(&tokens);
-    continue;
-}
+        if (parse_result == PARSE_INVALID_SYNTAX) {
+            printf("cshell: invalid syntax\n");
+            free_tokens(&tokens);
+            continue;
+        }
 
-/*
- * Temporary parser validation.
- * Execution will be implemented in Part C.
- */
-free_command_list(&command_list);
-free_tokens(&tokens);
+        execute_command_list(&command_list);
+
+        free_command_list(&command_list);
+        free_tokens(&tokens);
     }
 
     return EXIT_SUCCESS;
