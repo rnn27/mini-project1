@@ -1,4 +1,5 @@
 #include "shell.h"
+#include "lexer.h"
 
 // Global to store the directory where the shell was launched
 char shell_home[PATH_MAX];
@@ -65,7 +66,23 @@ int main() {
             continue;
         }
 
-        // TODO: Pass 'input' to the Lexer here
+        TokenList tokens;
+
+LexResult result = lex_line(input, &tokens);
+
+if (result == LEX_INVALID_SYNTAX) {
+    printf("cshell: invalid syntax\n");
+    continue;
+}
+
+for (size_t i = 0; i < tokens.count; i++) {
+    printf("TOKEN %zu: type=%d value=[%s]\n",
+           i,
+           tokens.tokens[i].type,
+           tokens.tokens[i].value);
+}
+
+free_tokens(&tokens);
     }
 
     return 0;
