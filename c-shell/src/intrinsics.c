@@ -1,5 +1,4 @@
 #include "intrinsics.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +7,9 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 extern char shell_home[PATH_MAX];
 

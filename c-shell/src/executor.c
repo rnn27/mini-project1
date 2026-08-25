@@ -10,6 +10,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 static int copy_fd(int source_fd, int destination_fd){
     char buffer[8192];
     while (1){
