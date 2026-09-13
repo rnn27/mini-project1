@@ -785,22 +785,21 @@ static int execute_pipeline(const Pipeline *pipeline){
 }
 
 
-/* Command list                                                              */
+/* Command list */
 
 
-int execute_command_list(
-    const CommandList *command_list){
-    if(command_list==NULL ||
-        command_list->count==0){
+int execute_command_list(const CommandList *command_list){
+    if(command_list==NULL || command_list->count==0){
         return 0;
     }
 
-    /*
-     * Mid-submission Part C requirement:
-     *
-     * When ';' or '&' occurs, only the first command group
-     * is executed. The rest are parsed/validated but ignored.
-     */
-    return execute_pipeline(
-        &command_list->pipelines[0]);
+    int result=0;
+
+    for(size_t i=0;i<command_list->count;i++){
+        if(execute_pipeline(&command_list->pipelines[i])<0){
+            result=-1;
+        }
+    }
+
+    return result;
 }
