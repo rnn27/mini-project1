@@ -1,4 +1,5 @@
 #include "intrinsics.h"
+#include "execute.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -732,7 +733,8 @@ int is_intrinsic(const char *command){
     return strcmp(command, "hop")==0 ||
            strcmp(command, "reveal")==0 ||
            strcmp(command, "peek")==0 ||
-           strcmp(command, "locate")==0;
+           strcmp(command, "locate")==0 ||
+           strcmp(command, "activities")==0;
 }
 
 int execute_intrinsic(int argc,
@@ -757,6 +759,10 @@ int execute_intrinsic(int argc,
 
     if(strcmp(argv[0], "locate")==0){
         return execute_locate(argc, argv);
+    }
+
+    if(strcmp(argv[0], "activities")==0){
+        return execute_activities();
     }
 
     return -1;

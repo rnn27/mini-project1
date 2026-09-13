@@ -20,8 +20,11 @@
 
 typedef struct{
     pid_t pid;
+    pid_t pgid;
+    int job_number;
     char command[PATH_MAX];
     int active;
+    int stopped;
 } BackgroundProcess;
 
 static BackgroundProcess background_processes[MAX_BACKGROUND];
@@ -86,28 +89,38 @@ static void sigchld_handler(int signal){
         }
 
         int status;
-        pid_t result=waitpid(background_processes[i].pid,&status,WNOHANG);
+        pid_t result=waitpid(background_processes[i].pid,&status,WNOHANG|WUNTRACED|WCONTINUED);
 
         if(result==background_processes[i].pid){
-            background_message(background_processes[i].command,result,WIFEXITED(status));
-            background_processes[i].active=0;
+            if(WIFEXITED(status) || WIFSIGNALED(status)){
+                background_message(background_processes[i].command,result,WIFEXITED(status));
+                background_processes[i].active=0;
+            }else if(WIFSTOPPED(status)){
+                background_processes[i].stopped=1;
+            }else if(WIFCONTINUED(status)){
+                background_processes[i].stopped=0;
+            }
         }
     }
 }
 
-static int add_background_process(pid_t pid,const char *command){
+static int add_background_process(pid_t pid,pid_t pgid,int job_number,const char *command){
     for(size_t i=0;i<MAX_BACKGROUND;i++){
         if(!background_processes[i].active){
             background_processes[i].pid=pid;
+            background_processes[i].pgid=pgid;
+            background_processes[i].job_number=job_number;
             strncpy(background_processes[i].command,command,PATH_MAX-1);
             background_processes[i].command[PATH_MAX-1]='\0';
             background_processes[i].active=1;
+            background_processes[i].stopped=0;
             return 0;
         }
     }
 
     return -1;
 }
+
 
 int install_sigchld_handler(void){
     struct sigaction action;
@@ -131,6 +144,110 @@ static int block_sigchld(sigset_t *oldset){
 
 static void restore_sigchld(const sigset_t *oldset){
     sigprocmask(SIG_SETMASK,oldset,NULL);
+}
+
+static void cleanup_background_processes(void){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(!background_processes[i].active){
+            continue;
+        }
+
+        int status;
+        pid_t result;
+
+        do{
+            result=waitpid(background_processes[i].pid,
+                            &status,
+                            WNOHANG|WUNTRACED|WCONTINUED);
+
+            if(result==background_processes[i].pid){
+                if(WIFEXITED(status) || WIFSIGNALED(status)){
+                    background_message(background_processes[i].command,
+                                       result,
+                                       WIFEXITED(status));
+                    background_processes[i].active=0;
+                }else if(WIFSTOPPED(status)){
+                    background_processes[i].stopped=1;
+                }else if(WIFCONTINUED(status)){
+                    background_processes[i].stopped=0;
+                }
+            }
+        }while(result==background_processes[i].pid &&
+               background_processes[i].active);
+    }
+}
+
+static int compare_activities(const void *a,const void *b){
+    const BackgroundProcess *left=*(const BackgroundProcess *const *)a;
+    const BackgroundProcess *right=*(const BackgroundProcess *const *)b;
+
+    if(left->job_number<right->job_number){
+        return -1;
+    }
+
+    if(left->job_number>right->job_number){
+        return 1;
+    }
+
+    return 0;
+}
+
+int execute_activities(void){
+    BackgroundProcess *groups[MAX_BACKGROUND];
+    size_t group_count=0;
+
+    sigset_t oldset;
+
+    if(block_sigchld(&oldset)<0){
+        return -1;
+    }
+
+    cleanup_background_processes();
+
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(!background_processes[i].active){
+            continue;
+        }
+
+        int found=0;
+
+        for(size_t j=0;j<group_count;j++){
+            if(groups[j]->job_number==background_processes[i].job_number){
+                found=1;
+                break;
+            }
+        }
+
+        if(!found){
+            groups[group_count++]=&background_processes[i];
+        }
+    }
+
+    qsort(groups,group_count,sizeof(BackgroundProcess *),compare_activities);
+
+    for(size_t i=0;i<group_count;i++){
+        BackgroundProcess *group=groups[i];
+
+        printf("[%d] pgid %d\n",
+               group->job_number,
+               (int)group->pgid);
+
+        for(size_t j=0;j<MAX_BACKGROUND;j++){
+            if(!background_processes[j].active ||
+               background_processes[j].job_number!=group->job_number){
+                continue;
+            }
+
+            printf("  %d %s %s\n",
+                   (int)background_processes[j].pid,
+                   background_processes[j].command,
+                   background_processes[j].stopped ? "Stopped" : "Running");
+        }
+    }
+
+    restore_sigchld(&oldset);
+
+    return 0;
 }
 
 static int copy_fd(int source_fd,int destination_fd){
@@ -501,7 +618,15 @@ static int execute_simple_command(const Command *command,int background){
         return -1;
     }
 
+    if(setpgid(pid,pid)<0 && errno!=EACCES && errno!=ESRCH){
+        perror("cshell: setpgid");
+    }
+
     if(pid==0){
+        if(setpgid(0,0)<0){
+            _exit(1);
+        }
+
         if(background){
             sigset_t set;
             sigemptyset(&set);
@@ -554,7 +679,7 @@ static int execute_simple_command(const Command *command,int background){
     if(background){
         int job=next_job_number++;
 
-        if(add_background_process(pid,command->argv[0])<0){
+        if(add_background_process(pid,pid,job,command->argv[0])<0){
             kill(pid,SIGTERM);
         }
 
@@ -691,7 +816,16 @@ static int execute_pipeline(const Pipeline *pipeline){
 
         pids[i]=pid;
 
+        pid_t pgid=i==0 ? pid : pids[0];
+
+        if(setpgid(pid,pgid)<0 && errno!=EACCES && errno!=ESRCH){
+            perror("cshell: setpgid");
+        }
+
         if(pid==0){
+            if(setpgid(0,pgid)<0){
+                _exit(1);
+            }
             const Command *command=&pipeline->commands[i];
 
             if(i>0){
@@ -798,7 +932,7 @@ static int execute_pipeline(const Pipeline *pipeline){
         int job=next_job_number++;
 
         for(size_t i=0;i<command_count;i++){
-            if(add_background_process(pids[i],pipeline->commands[i].argv[0])<0){
+            if(add_background_process(pids[i],pids[0],job,pipeline->commands[i].argv[0])<0){
                 kill(pids[i],SIGTERM);
             }
         }
