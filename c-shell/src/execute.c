@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,123 @@
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
+
+#define MAX_BACKGROUND 256
+
+typedef struct{
+    pid_t pid;
+    char command[PATH_MAX];
+    int active;
+} BackgroundProcess;
+
+static BackgroundProcess background_processes[MAX_BACKGROUND];
+static int next_job_number=1;
+
+static void write_number(char *buffer,size_t *length,pid_t value){
+    char digits[32];
+    size_t count=0;
+
+    if(value==0){
+        buffer[(*length)++]='0';
+        return;
+    }
+
+    while(value>0){
+        digits[count++]=(char)('0'+value%10);
+        value/=10;
+    }
+
+    while(count>0){
+        buffer[(*length)++]=digits[--count];
+    }
+}
+
+static void background_message(const char *command,pid_t pid,int normal){
+    char buffer[PATH_MAX+80];
+    size_t length=0;
+    const char *suffix=normal ? " exited normally\n" : " exited abnormally\n";
+
+    while(command[length]!='\0' && length<PATH_MAX-1){
+        buffer[length]=command[length];
+        length++;
+    }
+
+    buffer[length++]=' ';
+    buffer[length++]='w';
+    buffer[length++]='i';
+    buffer[length++]='t';
+    buffer[length++]='h';
+    buffer[length++]=' ';
+    buffer[length++]='p';
+    buffer[length++]='i';
+    buffer[length++]='d';
+    buffer[length++]=' ';
+
+    write_number(buffer,&length,pid);
+
+    size_t i=0;
+    while(suffix[i]!='\0'){
+        buffer[length++]=suffix[i++];
+    }
+
+    (void)write(STDOUT_FILENO,buffer,length);
+}
+
+static void sigchld_handler(int signal){
+    (void)signal;
+
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(!background_processes[i].active){
+            continue;
+        }
+
+        int status;
+        pid_t result=waitpid(background_processes[i].pid,&status,WNOHANG);
+
+        if(result==background_processes[i].pid){
+            background_message(background_processes[i].command,result,WIFEXITED(status));
+            background_processes[i].active=0;
+        }
+    }
+}
+
+static int add_background_process(pid_t pid,const char *command){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(!background_processes[i].active){
+            background_processes[i].pid=pid;
+            strncpy(background_processes[i].command,command,PATH_MAX-1);
+            background_processes[i].command[PATH_MAX-1]='\0';
+            background_processes[i].active=1;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+int install_sigchld_handler(void){
+    struct sigaction action;
+
+    memset(&action,0,sizeof(action));
+    action.sa_handler=sigchld_handler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags=SA_RESTART;
+
+    return sigaction(SIGCHLD,&action,NULL);
+}
+
+static int block_sigchld(sigset_t *oldset){
+    sigset_t set;
+
+    sigemptyset(&set);
+    sigaddset(&set,SIGCHLD);
+
+    return sigprocmask(SIG_BLOCK,&set,oldset);
+}
+
+static void restore_sigchld(const sigset_t *oldset){
+    sigprocmask(SIG_SETMASK,oldset,NULL);
+}
 
 static int copy_fd(int source_fd,int destination_fd){
     char buffer[8192];
@@ -29,10 +147,12 @@ static int copy_fd(int source_fd,int destination_fd){
             if(errno==EINTR){
                 continue;
             }
+
             return -1;
         }
 
         ssize_t total_written=0;
+
         while(total_written<bytes_read){
             ssize_t bytes_written=write(destination_fd,buffer+total_written,(size_t)(bytes_read-total_written));
 
@@ -40,6 +160,7 @@ static int copy_fd(int source_fd,int destination_fd){
                 if(errno==EINTR){
                     continue;
                 }
+
                 return -1;
             }
 
@@ -161,6 +282,7 @@ static int relay_output(int read_fd,const Command *command,int *output_fds){
             if(errno==EINTR){
                 continue;
             }
+
             return -1;
         }
 
@@ -174,6 +296,7 @@ static int relay_output(int read_fd,const Command *command,int *output_fds){
                     if(errno==EINTR){
                         continue;
                     }
+
                     return -1;
                 }
 
@@ -285,7 +408,7 @@ static int wait_for_pid(pid_t pid){
 
 /* Execute one command. */
 
-static int execute_simple_command(const Command *command){
+static int execute_simple_command(const Command *command,int background){
     int input_fd=-1;
 
     if(command->input_redirection_count>0){
@@ -303,13 +426,13 @@ static int execute_simple_command(const Command *command){
             if(input_fd>=0){
                 close(input_fd);
             }
+
             return -1;
         }
     }
 
     int output_pipe[2]={-1,-1};
 
-    /* Use a relay pipe for output redirection. */
     if(command->output_redirection_count>0){
         if(pipe(output_pipe)<0){
             perror("cshell: pipe");
@@ -328,10 +451,37 @@ static int execute_simple_command(const Command *command){
         }
     }
 
+    sigset_t oldset;
+
+    if(background && block_sigchld(&oldset)<0){
+        perror("cshell: sigprocmask");
+
+        if(output_pipe[0]>=0){
+            close(output_pipe[0]);
+            close(output_pipe[1]);
+        }
+
+        for(size_t i=0;i<command->output_redirection_count;i++){
+            close(output_fds[i]);
+        }
+
+        free(output_fds);
+
+        if(input_fd>=0){
+            close(input_fd);
+        }
+
+        return -1;
+    }
+
     pid_t pid=fork();
 
     if(pid<0){
         perror("cshell: fork");
+
+        if(background){
+            restore_sigchld(&oldset);
+        }
 
         if(output_pipe[0]>=0){
             close(output_pipe[0]);
@@ -352,7 +502,12 @@ static int execute_simple_command(const Command *command){
     }
 
     if(pid==0){
-        /* Set up child input. */
+        if(background){
+            sigset_t set;
+            sigemptyset(&set);
+            sigprocmask(SIG_SETMASK,&set,NULL);
+        }
+
         if(input_fd>=0){
             if(dup2(input_fd,STDIN_FILENO)<0){
                 _exit(1);
@@ -361,9 +516,29 @@ static int execute_simple_command(const Command *command){
             close(input_fd);
         }
 
-        /* Set up child output. */
         if(command->output_redirection_count>0){
             close(output_pipe[0]);
+
+            if(background){
+                pid_t relay_pid=fork();
+
+                if(relay_pid<0){
+                    _exit(1);
+                }
+
+                if(relay_pid==0){
+                    close(output_pipe[1]);
+
+                    int result=relay_output(output_pipe[0],command,output_fds);
+
+                    for(size_t i=0;i<command->output_redirection_count;i++){
+                        close(output_fds[i]);
+                    }
+
+                    free(output_fds);
+                    _exit(result==0 ? 0 : 1);
+                }
+            }
 
             if(dup2(output_pipe[1],STDOUT_FILENO)<0){
                 _exit(1);
@@ -376,7 +551,35 @@ static int execute_simple_command(const Command *command){
         _exit(127);
     }
 
-    /* Close parent input. */
+    if(background){
+        int job=next_job_number++;
+
+        if(add_background_process(pid,command->argv[0])<0){
+            kill(pid,SIGTERM);
+        }
+
+        printf("[%d] %d\n",job,(int)pid);
+        fflush(stdout);
+        restore_sigchld(&oldset);
+
+        if(input_fd>=0){
+            close(input_fd);
+        }
+
+        if(command->output_redirection_count>0){
+            close(output_pipe[0]);
+            close(output_pipe[1]);
+
+            for(size_t i=0;i<command->output_redirection_count;i++){
+                close(output_fds[i]);
+            }
+
+            free(output_fds);
+        }
+
+        return 0;
+    }
+
     if(input_fd>=0){
         close(input_fd);
     }
@@ -418,7 +621,7 @@ static int execute_pipeline(const Pipeline *pipeline){
     }
 
     if(command_count==1){
-        return execute_simple_command(&pipeline->commands[0]);
+        return execute_simple_command(&pipeline->commands[0],pipeline->background);
     }
 
     size_t pipe_count=command_count-1;
@@ -432,6 +635,15 @@ static int execute_pipeline(const Pipeline *pipeline){
         return -1;
     }
 
+    sigset_t oldset;
+
+    if(pipeline->background && block_sigchld(&oldset)<0){
+        free(pipes);
+        free(pids);
+        perror("cshell: sigprocmask");
+        return -1;
+    }
+
     /* Create all pipes before forking. */
     for(size_t i=0;i<pipe_count;i++){
         if(pipe(pipes[i])<0){
@@ -440,6 +652,10 @@ static int execute_pipeline(const Pipeline *pipeline){
             for(size_t j=0;j<i;j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
+            }
+
+            if(pipeline->background){
+                restore_sigchld(&oldset);
             }
 
             free(pipes);
@@ -464,6 +680,10 @@ static int execute_pipeline(const Pipeline *pipeline){
                 (void)wait_for_pid(pids[j]);
             }
 
+            if(pipeline->background){
+                restore_sigchld(&oldset);
+            }
+
             free(pipes);
             free(pids);
             return -1;
@@ -474,14 +694,12 @@ static int execute_pipeline(const Pipeline *pipeline){
         if(pid==0){
             const Command *command=&pipeline->commands[i];
 
-            /* Connect input to the previous pipe. */
             if(i>0){
                 if(dup2(pipes[i-1][0],STDIN_FILENO)<0){
                     _exit(1);
                 }
             }
 
-            /* Connect output to the next pipe. */
             if(i<command_count-1){
                 if(dup2(pipes[i][1],STDOUT_FILENO)<0){
                     _exit(1);
@@ -554,10 +772,15 @@ static int execute_pipeline(const Pipeline *pipeline){
                 close(output_pipe[1]);
             }
 
-            /* Close inherited pipe descriptors. */
             for(size_t j=0;j<pipe_count;j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
+            }
+
+            if(pipeline->background){
+                sigset_t set;
+                sigemptyset(&set);
+                sigprocmask(SIG_SETMASK,&set,NULL);
             }
 
             execute_command(command);
@@ -569,6 +792,24 @@ static int execute_pipeline(const Pipeline *pipeline){
     for(size_t i=0;i<pipe_count;i++){
         close(pipes[i][0]);
         close(pipes[i][1]);
+    }
+
+    if(pipeline->background){
+        int job=next_job_number++;
+
+        for(size_t i=0;i<command_count;i++){
+            if(add_background_process(pids[i],pipeline->commands[i].argv[0])<0){
+                kill(pids[i],SIGTERM);
+            }
+        }
+
+        printf("[%d] %d\n",job,(int)pids[0]);
+        fflush(stdout);
+        restore_sigchld(&oldset);
+
+        free(pipes);
+        free(pids);
+        return 0;
     }
 
     /* Wait for every foreground stage. */
