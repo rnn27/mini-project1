@@ -10,39 +10,40 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
-static int copy_fd(int source_fd, int destination_fd){
+
+static int copy_fd(int source_fd,int destination_fd){
     char buffer[8192];
+
     while(1){
-        ssize_t bytes_read=
-            read(source_fd, buffer, sizeof(buffer));
+        ssize_t bytes_read=read(source_fd,buffer,sizeof(buffer));
+
         if(bytes_read==0){
             return 0;
         }
-        if(bytes_read < 0){
+
+        if(bytes_read<0){
             if(errno==EINTR){
                 continue;
             }
             return -1;
         }
-        ssize_t total_written=0;
-        while(total_written < bytes_read){
-            ssize_t bytes_written=
-                write(destination_fd,
-                      buffer + total_written,
-                     (size_t)(bytes_read - total_written));
 
-            if(bytes_written < 0){
+        ssize_t total_written=0;
+        while(total_written<bytes_read){
+            ssize_t bytes_written=write(destination_fd,buffer+total_written,(size_t)(bytes_read-total_written));
+
+            if(bytes_written<0){
                 if(errno==EINTR){
                     continue;
                 }
-
                 return -1;
             }
 
-            total_written +=bytes_written;
+            total_written+=bytes_written;
         }
     }
 }
@@ -51,29 +52,30 @@ static int prepare_input_stream(const Command *command){
     if(command->input_redirection_count==0){
         return -1;
     }
+
     char template[]="/tmp/cshell-input-XXXXXX";
     int temp_fd=mkstemp(template);
-    if(temp_fd < 0){
+
+    if(temp_fd<0){
         return -1;
     }
-    if(unlink(template) < 0){
+
+    if(unlink(template)<0){
         close(temp_fd);
         return -1;
     }
 
-    for(size_t i=0;i < command->input_redirection_count;i++){
-        const Redirection *redirection=
-            &command->input_redirections[i];
+    for(size_t i=0;i<command->input_redirection_count;i++){
+        const Redirection *redirection=&command->input_redirections[i];
+        int input_fd=open(redirection->filename,O_RDONLY);
 
-        int input_fd=open(redirection->filename, O_RDONLY);
-
-        if(input_fd < 0){
+        if(input_fd<0){
             fprintf(stderr,"cshell: no such file or directory\n");
             close(temp_fd);
             return -1;
         }
 
-        if(copy_fd(input_fd, temp_fd) < 0){
+        if(copy_fd(input_fd,temp_fd)<0){
             close(input_fd);
             close(temp_fd);
             return -1;
@@ -82,7 +84,7 @@ static int prepare_input_stream(const Command *command){
         close(input_fd);
     }
 
-    if(lseek(temp_fd, 0, SEEK_SET) < 0){
+    if(lseek(temp_fd,0,SEEK_SET)<0){
         close(temp_fd);
         return -1;
     }
@@ -97,125 +99,96 @@ static int setup_input_for_child(const Command *command){
 
     int input_fd=prepare_input_stream(command);
 
-    if(input_fd < 0){
+    if(input_fd<0){
         return -1;
     }
 
-    if(dup2(input_fd, STDIN_FILENO) < 0){
+    if(dup2(input_fd,STDIN_FILENO)<0){
         close(input_fd);
         return -1;
     }
 
     close(input_fd);
-
     return 0;
 }
 
-
 static int open_output_files(const Command *command,int **fds_out){
-    size_t count=
-        command->output_redirection_count;
-
-    int *fds=
-        malloc(count * sizeof(int));
+    size_t count=command->output_redirection_count;
+    int *fds=malloc(count*sizeof(int));
 
     if(fds==NULL){
         return -1;
     }
 
-    for(size_t i=0; i < count; i++){
-        const Redirection *redirection=
-            &command->output_redirections[i];
-
-        int flags=
-            O_WRONLY |
-            O_CREAT;
+    for(size_t i=0;i<count;i++){
+        const Redirection *redirection=&command->output_redirections[i];
+        int flags=O_WRONLY|O_CREAT;
 
         if(redirection->type==REDIR_OUTPUT){
-            flags |=O_TRUNC;
-        } else{
-            flags |=O_APPEND;
+            flags|=O_TRUNC;
+        }else{
+            flags|=O_APPEND;
         }
 
-        fds[i]=
-            open(redirection->filename,
-                 flags,
-                 0644);
+        fds[i]=open(redirection->filename,flags,0644);
 
-        if(fds[i] < 0){
-            for(size_t j=0; j < i; j++){
+        if(fds[i]<0){
+            for(size_t j=0;j<i;j++){
                 close(fds[j]);
             }
 
             free(fds);
-
-            fprintf(stderr,
-                    "cshell: unable to create file for writing\n");
-
+            fprintf(stderr,"cshell: unable to create file for writing\n");
             return -1;
         }
     }
 
     *fds_out=fds;
-
     return 0;
 }
 
-static int relay_output(int read_fd,
-                        const Command *command,
-                        int *output_fds){
+static int relay_output(int read_fd,const Command *command,int *output_fds){
     char buffer[8192];
 
     while(1){
-        ssize_t bytes_read=
-            read(read_fd,
-                 buffer,
-                 sizeof(buffer));
+        ssize_t bytes_read=read(read_fd,buffer,sizeof(buffer));
 
         if(bytes_read==0){
             return 0;
         }
 
-        if(bytes_read < 0){
+        if(bytes_read<0){
             if(errno==EINTR){
                 continue;
             }
-
             return -1;
         }
 
-        for(size_t i=0;
-             i < command->output_redirection_count;
-             i++){
-
+        for(size_t i=0;i<command->output_redirection_count;i++){
             ssize_t total_written=0;
 
-            while(total_written < bytes_read){
-                ssize_t bytes_written=
-                    write(output_fds[i],
-                          buffer + total_written,
-                         (size_t)(bytes_read - total_written));
+            while(total_written<bytes_read){
+                ssize_t bytes_written=write(output_fds[i],buffer+total_written,(size_t)(bytes_read-total_written));
 
-                if(bytes_written < 0){
+                if(bytes_written<0){
                     if(errno==EINTR){
                         continue;
                     }
-
                     return -1;
                 }
 
-                total_written +=bytes_written;
+                total_written+=bytes_written;
             }
         }
     }
 }
 
-/* C1 command resolution                                                     */
+/* C1 command resolution */
 
 static int is_regular_executable(const char *path){
     struct stat st;
 
-    if(stat(path, &st) < 0){
+    if(stat(path,&st)<0){
         return 0;
     }
 
@@ -223,136 +196,82 @@ static int is_regular_executable(const char *path){
         return 0;
     }
 
-    return access(path, X_OK)==0;
+    return access(path,X_OK)==0;
 }
 
 static void execute_command(const Command *command){
-    const char *original=
-        command->argv[0];
-    if(original==NULL ||
-        original[0]=='\0'){
+    const char *original=command->argv[0];
+
+    if(original==NULL || original[0]=='\0'){
         _exit(127);
     }
 
-    // --- ADD THIS BLOCK ---
     if(is_intrinsic(original)){
-        int result=execute_intrinsic((int)command->argc, command->argv);
+        int result=execute_intrinsic((int)command->argc,command->argv);
         _exit(result==0 ? 0 : 1);
     }
-    // ----------------------
 
-    /*
-     * %name:
-     * skip current-directory lookup and search PATH directly.
-     */
-     // ... rest of the existing execute_command function stays the same ...
-    /*
-     * %name:
-     * skip current-directory lookup and search PATH directly.
-     *
-     * We cannot modify command->argv[0] because it belongs to
-     * the parsed command structure. Create a small replacement
-     * argv instead.
-     */
+    /* Search PATH directly for % commands. */
     if(original[0]=='%'){
-        const char *name=
-            original + 1;
+        const char *name=original+1;
 
         if(name[0]=='\0'){
-            fprintf(stderr,
-                    "cshell: command not found()\n");
+            fprintf(stderr,"cshell: command not found()\n");
             _exit(127);
         }
 
-        char **exec_argv=
-            malloc((command->argc + 1) *
-                   sizeof(char *));
+        char **exec_argv=malloc((command->argc+1)*sizeof(char *));
 
         if(exec_argv==NULL){
             perror("cshell: malloc");
             _exit(127);
         }
 
-        for(size_t i=0;
-             i < command->argc;
-             i++){
-            exec_argv[i]=
-                command->argv[i];
+        for(size_t i=0;i<command->argc;i++){
+            exec_argv[i]=command->argv[i];
         }
 
         exec_argv[command->argc]=NULL;
-
-        /*
-         * argv[0] seen by the program is the actual command name,
-         * not the '%' prefix.
-         */
         exec_argv[0]=(char *)name;
 
-        execvp(name, exec_argv);
+        execvp(name,exec_argv);
 
-        fprintf(stderr,
-                "cshell: command not found(%s)\n",
-                name);
-
+        fprintf(stderr,"cshell: command not found(%s)\n",name);
         free(exec_argv);
         _exit(127);
     }
 
-    /*
-     * If the name contains '/', treat it as a literal path.
-     */
-    if(strchr(original, '/') !=NULL){
-        if(access(original, X_OK)==0){
-            execv(original, command->argv);
+    /* Treat commands containing / as paths. */
+    if(strchr(original,'/')!=NULL){
+        if(access(original,X_OK)==0){
+            execv(original,command->argv);
         }
 
-        fprintf(stderr,
-                "cshell: command not found(%s)\n",
-                original);
-
+        fprintf(stderr,"cshell: command not found(%s)\n",original);
         _exit(127);
     }
 
-    /*
-     * First search the current directory.
-     */
+    /* Search the current directory first. */
     char local_path[PATH_MAX];
+    int written=snprintf(local_path,sizeof(local_path),"./%s",original);
 
-    int written=
-        snprintf(local_path,
-                 sizeof(local_path),
-                 "./%s",
-                 original);
-
-    if(written >=0 &&
-       (size_t)written < sizeof(local_path) &&
-        is_regular_executable(local_path)){
-
-        execv(local_path,
-              command->argv);
+    if(written>=0 && (size_t)written<sizeof(local_path) && is_regular_executable(local_path)){
+        execv(local_path,command->argv);
     }
 
-    /*
-     * Then search PATH.
-     */
-    execvp(original,
-           command->argv);
+    /* Search PATH after the current directory. */
+    execvp(original,command->argv);
 
-    fprintf(stderr,
-            "cshell: command not found(%s)\n",
-            original);
-
+    fprintf(stderr,"cshell: command not found(%s)\n",original);
     _exit(127);
 }
 
-
-/* Waiting                                                                    */
-
+/* Wait for a child process. */
 
 static int wait_for_pid(pid_t pid){
     int status;
 
-    while(waitpid(pid, &status, 0) < 0){
+    while(waitpid(pid,&status,0)<0){
         if(errno==EINTR){
             continue;
         }
@@ -364,55 +283,44 @@ static int wait_for_pid(pid_t pid){
     return 0;
 }
 
-
-/* Single command                                                             */
-
+/* Execute one command. */
 
 static int execute_simple_command(const Command *command){
     int input_fd=-1;
 
-    if(command->input_redirection_count > 0){
-        input_fd=
-            prepare_input_stream(command);
+    if(command->input_redirection_count>0){
+        input_fd=prepare_input_stream(command);
 
-        if(input_fd < 0){
+        if(input_fd<0){
             return -1;
         }
     }
 
     int *output_fds=NULL;
 
-    if(command->output_redirection_count > 0){
-        if(open_output_files(command,
-                              &output_fds) < 0){
-
-            if(input_fd >=0){
+    if(command->output_redirection_count>0){
+        if(open_output_files(command,&output_fds)<0){
+            if(input_fd>=0){
                 close(input_fd);
             }
-
             return -1;
         }
     }
 
-    int output_pipe[2]={-1, -1};
+    int output_pipe[2]={-1,-1};
 
-    /*
-     * A relay pipe is used so the parent can fan the command's
-     * complete output into every > / >> target.
-     */
-    if(command->output_redirection_count > 0){
-        if(pipe(output_pipe) < 0){
+    /* Use a relay pipe for output redirection. */
+    if(command->output_redirection_count>0){
+        if(pipe(output_pipe)<0){
             perror("cshell: pipe");
 
-            for(size_t i=0;
-                 i < command->output_redirection_count;
-                 i++){
+            for(size_t i=0;i<command->output_redirection_count;i++){
                 close(output_fds[i]);
             }
 
             free(output_fds);
 
-            if(input_fd >=0){
+            if(input_fd>=0){
                 close(input_fd);
             }
 
@@ -422,23 +330,21 @@ static int execute_simple_command(const Command *command){
 
     pid_t pid=fork();
 
-    if(pid < 0){
+    if(pid<0){
         perror("cshell: fork");
 
-        if(output_pipe[0] >=0){
+        if(output_pipe[0]>=0){
             close(output_pipe[0]);
             close(output_pipe[1]);
         }
 
-        for(size_t i=0;
-             i < command->output_redirection_count;
-             i++){
+        for(size_t i=0;i<command->output_redirection_count;i++){
             close(output_fds[i]);
         }
 
         free(output_fds);
 
-        if(input_fd >=0){
+        if(input_fd>=0){
             close(input_fd);
         }
 
@@ -446,26 +352,20 @@ static int execute_simple_command(const Command *command){
     }
 
     if(pid==0){
-        /*
-         * Child input.
-         */
-        if(input_fd >=0){
-            if(dup2(input_fd,
-                     STDIN_FILENO) < 0){
+        /* Set up child input. */
+        if(input_fd>=0){
+            if(dup2(input_fd,STDIN_FILENO)<0){
                 _exit(1);
             }
 
             close(input_fd);
         }
 
-        /*
-         * Child output.
-         */
-        if(command->output_redirection_count > 0){
+        /* Set up child output. */
+        if(command->output_redirection_count>0){
             close(output_pipe[0]);
 
-            if(dup2(output_pipe[1],
-                     STDOUT_FILENO) < 0){
+            if(dup2(output_pipe[1],STDOUT_FILENO)<0){
                 _exit(1);
             }
 
@@ -473,47 +373,32 @@ static int execute_simple_command(const Command *command){
         }
 
         execute_command(command);
-
-        /*
-         * execute_command() only returns on failure.
-         */
         _exit(127);
     }
 
-    /*
-     * Parent.
-     */
-    if(input_fd >=0){
+    /* Close parent input. */
+    if(input_fd>=0){
         close(input_fd);
     }
 
-    if(command->output_redirection_count > 0){
+    if(command->output_redirection_count>0){
         close(output_pipe[1]);
 
-        if(relay_output(output_pipe[0],
-                         command,
-                         output_fds) < 0){
-
+        if(relay_output(output_pipe[0],command,output_fds)<0){
             close(output_pipe[0]);
 
-            for(size_t i=0;
-                 i < command->output_redirection_count;
-                 i++){
+            for(size_t i=0;i<command->output_redirection_count;i++){
                 close(output_fds[i]);
             }
 
             free(output_fds);
-
-           (void)wait_for_pid(pid);
-
+            (void)wait_for_pid(pid);
             return -1;
         }
 
         close(output_pipe[0]);
 
-        for(size_t i=0;
-             i < command->output_redirection_count;
-             i++){
+        for(size_t i=0;i<command->output_redirection_count;i++){
             close(output_fds[i]);
         }
 
@@ -523,158 +408,105 @@ static int execute_simple_command(const Command *command){
     return wait_for_pid(pid);
 }
 
-
-/* Pipeline                                                                   */
-
+/* Execute a pipeline. */
 
 static int execute_pipeline(const Pipeline *pipeline){
-    size_t command_count=
-        pipeline->count;
+    size_t command_count=pipeline->count;
 
     if(command_count==0){
         return -1;
     }
 
     if(command_count==1){
-        return execute_simple_command(
-            &pipeline->commands[0]);
+        return execute_simple_command(&pipeline->commands[0]);
     }
 
-    size_t pipe_count=
-        command_count - 1;
+    size_t pipe_count=command_count-1;
+    int(*pipes)[2]=malloc(pipe_count*sizeof(*pipes));
+    pid_t *pids=malloc(command_count*sizeof(pid_t));
 
-    int(*pipes)[2]=
-        malloc(pipe_count *
-               sizeof(*pipes));
-
-    pid_t *pids=
-        malloc(command_count *
-               sizeof(pid_t));
-
-    if(pipes==NULL ||
-        pids==NULL){
-
+    if(pipes==NULL || pids==NULL){
         free(pipes);
         free(pids);
-
         perror("cshell: malloc");
         return -1;
     }
 
-    /*
-     * Create all pipes before forking.
-     */
-    for(size_t i=0;
-         i < pipe_count;
-         i++){
-
-        if(pipe(pipes[i]) < 0){
+    /* Create all pipes before forking. */
+    for(size_t i=0;i<pipe_count;i++){
+        if(pipe(pipes[i])<0){
             perror("cshell: pipe");
 
-            for(size_t j=0;
-                 j < i;
-                 j++){
+            for(size_t j=0;j<i;j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
             free(pipes);
             free(pids);
-
             return -1;
         }
     }
 
-    /*
-     * Fork each stage.
-     */
-    for(size_t i=0;
-         i < command_count;
-         i++){
-
+    /* Fork each pipeline stage. */
+    for(size_t i=0;i<command_count;i++){
         pid_t pid=fork();
 
-        if(pid < 0){
+        if(pid<0){
             perror("cshell: fork");
 
-            for(size_t j=0;
-                 j < pipe_count;
-                 j++){
+            for(size_t j=0;j<pipe_count;j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
-            for(size_t j=0;
-                 j < i;
-                 j++){
-               (void)wait_for_pid(pids[j]);
+            for(size_t j=0;j<i;j++){
+                (void)wait_for_pid(pids[j]);
             }
 
             free(pipes);
             free(pids);
-
             return -1;
         }
 
         pids[i]=pid;
 
         if(pid==0){
-            const Command *command=
-                &pipeline->commands[i];
+            const Command *command=&pipeline->commands[i];
 
-            /*
-             * stdin from previous pipe.
-             */
-            if(i > 0){
-                if(dup2(pipes[i - 1][0],
-                         STDIN_FILENO) < 0){
+            /* Connect input to the previous pipe. */
+            if(i>0){
+                if(dup2(pipes[i-1][0],STDIN_FILENO)<0){
                     _exit(1);
                 }
             }
 
-            /*
-             * stdout to next pipe.
-             */
-            if(i < command_count - 1){
-                if(dup2(pipes[i][1],
-                         STDOUT_FILENO) < 0){
+            /* Connect output to the next pipe. */
+            if(i<command_count-1){
+                if(dup2(pipes[i][1],STDOUT_FILENO)<0){
                     _exit(1);
                 }
             }
 
-            /*
-             * Explicit input redirection overrides the pipeline's
-             * stdin for this command.
-             */
-            if(command->input_redirection_count > 0){
-                if(setup_input_for_child(command) < 0){
+            /* Input redirection overrides the pipeline input. */
+            if(command->input_redirection_count>0){
+                if(setup_input_for_child(command)<0){
                     _exit(1);
                 }
             }
 
-            /*
-             * For the final pipeline stage, explicit output
-             * redirection overrides the pipeline's stdout.
-             *
-             * Fan-out is handled with a small child-side relay:
-             * stdout -> relay pipe -> every output file.
-             */
-            if(i==command_count - 1 &&
-                command->output_redirection_count > 0){
-
+            /* Output redirection overrides the pipeline output. */
+            if(i==command_count-1 && command->output_redirection_count>0){
                 int *output_fds=NULL;
 
-                if(open_output_files(command,
-                                      &output_fds) < 0){
+                if(open_output_files(command,&output_fds)<0){
                     _exit(1);
                 }
 
                 int output_pipe[2];
 
-                if(pipe(output_pipe) < 0){
-                    for(size_t j=0;
-                         j < command->output_redirection_count;
-                         j++){
+                if(pipe(output_pipe)<0){
+                    for(size_t j=0;j<command->output_redirection_count;j++){
                         close(output_fds[j]);
                     }
 
@@ -682,16 +514,13 @@ static int execute_pipeline(const Pipeline *pipeline){
                     _exit(1);
                 }
 
-                pid_t relay_pid=
-                    fork();
+                pid_t relay_pid=fork();
 
-                if(relay_pid < 0){
+                if(relay_pid<0){
                     close(output_pipe[0]);
                     close(output_pipe[1]);
 
-                    for(size_t j=0;
-                         j < command->output_redirection_count;
-                         j++){
+                    for(size_t j=0;j<command->output_redirection_count;j++){
                         close(output_fds[j]);
                     }
 
@@ -702,78 +531,51 @@ static int execute_pipeline(const Pipeline *pipeline){
                 if(relay_pid==0){
                     close(output_pipe[1]);
 
-                    int relay_result=
-                        relay_output(output_pipe[0],
-                                     command,
-                                     output_fds);
+                    int relay_result=relay_output(output_pipe[0],command,output_fds);
 
                     close(output_pipe[0]);
 
-                    for(size_t j=0;
-                         j < command->output_redirection_count;
-                         j++){
+                    for(size_t j=0;j<command->output_redirection_count;j++){
                         close(output_fds[j]);
                     }
 
                     free(output_fds);
-
                     _exit(relay_result==0 ? 0 : 1);
                 }
 
                 close(output_pipe[0]);
                 free(output_fds);
 
-                if(dup2(output_pipe[1],
-                         STDOUT_FILENO) < 0){
+                if(dup2(output_pipe[1],STDOUT_FILENO)<0){
                     close(output_pipe[1]);
                     _exit(1);
                 }
 
                 close(output_pipe[1]);
-
-                /*
-                 * The relay helper belongs to the command's
-                 * execution subtree. The shell only waits for
-                 * the original pipeline processes below.
-                 */
             }
 
-            /*
-             * Close all inherited pipeline descriptors.
-             */
-            for(size_t j=0;
-                 j < pipe_count;
-                 j++){
+            /* Close inherited pipe descriptors. */
+            for(size_t j=0;j<pipe_count;j++){
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
             execute_command(command);
-
             _exit(127);
         }
     }
 
-    /*
-     * Parent closes all pipe descriptors.
-     */
-    for(size_t i=0;
-         i < pipe_count;
-         i++){
+    /* Close pipes in the parent. */
+    for(size_t i=0;i<pipe_count;i++){
         close(pipes[i][0]);
         close(pipes[i][1]);
     }
 
-    /*
-     * Foreground pipeline: wait for every stage.
-     */
+    /* Wait for every foreground stage. */
     int result=0;
 
-    for(size_t i=0;
-         i < command_count;
-         i++){
-
-        if(wait_for_pid(pids[i]) < 0){
+    for(size_t i=0;i<command_count;i++){
+        if(wait_for_pid(pids[i])<0){
             result=-1;
         }
     }
@@ -784,9 +586,7 @@ static int execute_pipeline(const Pipeline *pipeline){
     return result;
 }
 
-
-/* Command list */
-
+/* Execute all command groups sequentially. */
 
 int execute_command_list(const CommandList *command_list){
     if(command_list==NULL || command_list->count==0){
