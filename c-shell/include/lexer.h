@@ -1,5 +1,6 @@
 #ifndef LEXER_H
 #define LEXER_H
+/* Token types and lexer interface. */
 #include <stddef.h>
 typedef enum{
     TOKEN_WORD, TOKEN_PIPE, TOKEN_AMP, TOKEN_SEMI, TOKEN_LT, TOKEN_GT, TOKEN_GTGT

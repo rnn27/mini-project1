@@ -5,6 +5,7 @@
 #include "intrinsics.h"
 #include <errno.h>
 char shell_home[PATH_MAX];
+/* Print the prompt using the current directory and shell home. */
 void print_prompt(void){
     char cwd[PATH_MAX];
     char host[256];
@@ -26,6 +27,7 @@ void print_prompt(void){
     }
     fflush(stdout);
 }
+/* Read, parse and execute commands until the shell exits. */
 int main(void){
     if(getcwd(shell_home,sizeof(shell_home))==NULL){
         perror("Fatal: could not get initial directory");

@@ -14,6 +14,7 @@
 extern char shell_home[PATH_MAX];
 static char previous_directory[PATH_MAX]="";
 static int previous_directory_valid=0;
+/* Build a path without overflowing the destination buffer. */
 static int join_path(char *result,size_t result_size,const char *directory,const char *name){
     if(result==NULL ||result_size==0 || directory==NULL || name==NULL){
         return -1;
@@ -34,6 +35,7 @@ static int join_path(char *result,size_t result_size,const char *directory,const
     result[offset + name_length]='\0';
     return 0;
 }
+/* Change directory and update hop history after success. */
 static int change_directory(const char *path){
     char current_directory[PATH_MAX];
     if(getcwd(current_directory,sizeof(current_directory))==NULL){
@@ -82,6 +84,7 @@ success:
     }
     return 0;
 }
+/* Implement hop with home and previous-directory support. */
 static int execute_hop(int argc, char *const argv[]){
     if(argc==1){
         return change_directory(shell_home);
@@ -108,6 +111,7 @@ static int cmp_entries(const void *a, const void *b){
     const char *const *right= (const char *const *)b;
     return strcmp(*left, *right);
 }
+/* List directory entries with optional flags and recursion. */
 static int execute_reveal(int argc, char *const argv[]){
     int show_all=0;
     int recursive=0;
@@ -221,6 +225,7 @@ static int execute_reveal(int argc, char *const argv[]){
     free(entries);
     return 0;
 }
+/* Read files or standard input with optional line numbering/reversal. */
 static int execute_peek(int argc,char *const argv[]){
     int n_flag=0;
     int r_flag=0;
@@ -332,6 +337,7 @@ static int execute_peek(int argc,char *const argv[]){
     }
     return 0;
 }
+/* Search the current directory and PATH for each command. */
 static int execute_locate(int argc, char *const argv[]){
     if(argc < 2){
         fprintf(stderr, "locate: invalid syntax\n");
@@ -381,12 +387,14 @@ static int execute_locate(int argc, char *const argv[]){
     }
     return 0;
 }
+/* Identify commands handled directly by the shell. */
 int is_intrinsic(const char *command){
     if(command==NULL){
         return 0;
     }
     return strcmp(command, "hop")==0 || strcmp(command, "reveal")==0 || strcmp(command, "peek")==0 || strcmp(command, "locate")==0 || strcmp(command, "activities")==0 || strcmp(command, "ping")==0 || strcmp(command, "spy")==0 || strcmp(command, "snoop")==0 || strcmp(command, "resume")==0;
 }
+/* Dispatch an intrinsic command to its implementation. */
 int execute_intrinsic(int argc, char *const argv[]){
     if(argc <=0 || argv==NULL || argv[0]==NULL){
         return -1;

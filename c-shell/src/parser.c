@@ -1,6 +1,7 @@
 #include "parser.h"
 #include <stdlib.h>
 #include <string.h>
+/* Reset a command and all of its dynamic fields. */
 static void init_command(Command *command){
     command->argv=NULL;
     command->argc=0;
@@ -12,6 +13,7 @@ static void init_command(Command *command){
     command->output_redirection_count=0;
     command->output_redirection_capacity=0;
 }
+/* Free the filenames stored by a redirection list. */
 static void free_redirections(Redirection *redirections,size_t count){
     if(redirections==NULL){
         return;
@@ -35,6 +37,7 @@ static void free_command(Command *command){
     free_redirections(command->output_redirections,command->output_redirection_count);
     init_command(command);
 }
+/* Free every command and pipeline in a command list. */
 void free_command_list(CommandList *command_list){
     if(command_list==NULL){
         return;
@@ -55,6 +58,7 @@ void free_command_list(CommandList *command_list){
     command_list->count=0;
     command_list->capacity=0;
 }
+/* Append an empty pipeline to the command list. */
 static int add_pipeline(CommandList *command_list){
     if(command_list->count>=command_list->capacity){
         size_t new_capacity=(command_list->capacity==0) ? 2 : command_list->capacity*2;
@@ -73,6 +77,7 @@ static int add_pipeline(CommandList *command_list){
     command_list->count++;
     return 1;
 }
+/* Append an empty command to a pipeline. */
 static int add_command(Pipeline *pipeline){
     if(pipeline->count>=pipeline->capacity){
         size_t new_capacity=(pipeline->capacity==0) ? 2 : pipeline->capacity*2;
@@ -87,6 +92,7 @@ static int add_command(Pipeline *pipeline){
     pipeline->count++;
     return 1;
 }
+/* Append one argument and keep argv NULL-terminated. */
 static int add_argument(Command *command,const char *value){
     if(command->argc+1>=command->argv_capacity){
         size_t new_capacity=(command->argv_capacity==0) ? 4 : command->argv_capacity*2;
@@ -105,6 +111,7 @@ static int add_argument(Command *command,const char *value){
     command->argv[command->argc]=NULL;
     return 1;
 }
+/* Append one input or output redirection. */
 static int add_redirection(Redirection **redirections,size_t *count,size_t *capacity,RedirectionType type,const char *filename){
     if(*count>=*capacity){
         size_t new_capacity=(*capacity==0) ? 2 : *capacity*2;
@@ -132,6 +139,7 @@ static int add_output_redirection(Command *command,RedirectionType type,const ch
 static int is_redirection(TokenType type){
     return type==TOKEN_LT || type==TOKEN_GT || type==TOKEN_GTGT;
 }
+/* Parse a redirection operator and its filename. */
 static int parse_redirection(const TokenList *tokens,size_t *index,Command *command){
     TokenType operator=tokens->tokens[*index].type;
     if(*index+1>=tokens->count || tokens->tokens[*index+1].type!=TOKEN_WORD){
@@ -152,6 +160,7 @@ static int parse_redirection(const TokenList *tokens,size_t *index,Command *comm
     *index+=2;
     return 1;
 }
+/* Parse commands, redirections, pipes and background markers. */
 static int parse_pipeline(const TokenList *tokens,size_t *index,Pipeline *pipeline){
     if(!add_command(pipeline)){
         return 0;
@@ -203,6 +212,7 @@ static int parse_pipeline(const TokenList *tokens,size_t *index,Pipeline *pipeli
     }
     return current->argc!=0;
 }
+/* Convert the token stream into executable pipelines. */
 ParseResult parse_tokens(const TokenList *tokens,CommandList *command_list){
     if(command_list==NULL){
         return PARSE_INVALID_SYNTAX;

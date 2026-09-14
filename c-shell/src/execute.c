@@ -33,6 +33,7 @@ static int next_job_number=1;
 static pid_t shell_pgid=-1;
 static int shell_terminal=-1;
 static int job_control_enabled=0;
+/* Restore default signal handling before a child is executed. */
 static void set_default_signals(void){
     struct sigaction action;
     memset(&action,0,sizeof(action));
@@ -43,6 +44,7 @@ static void set_default_signals(void){
     sigaction(SIGTTOU,&action,NULL);
     sigaction(SIGCHLD,&action,NULL);
 }
+/* Put the shell in its own process group and take terminal control. */
 int initialize_job_control(void){
     shell_terminal=STDIN_FILENO;
     if(!isatty(shell_terminal)){
@@ -75,6 +77,7 @@ static void reclaim_terminal(void){
         (void)tcsetpgrp(shell_terminal,shell_pgid);
     }
 }
+/* Check whether any tracked job is currently stopped. */
 int has_stopped_jobs(void){
     for(size_t i=0;i<MAX_BACKGROUND;i++){
         if(background_processes[i].active && background_processes[i].stopped){
@@ -83,6 +86,7 @@ int has_stopped_jobs(void){
     }
     return 0;
 }
+/* Send SIGHUP once to every tracked background process group. */
 void send_sighup_to_jobs(void){
     pid_t groups[MAX_BACKGROUND];
     size_t count=0;
@@ -145,6 +149,7 @@ static void background_message(const char *command,pid_t pid,int normal){
     }
     (void)write(STDOUT_FILENO,buffer,length);
 }
+/* Reap background children and update their job states. */
 static void sigchld_handler(int signal){
     (void)signal;
     for(size_t i=0;i<MAX_BACKGROUND;i++){
@@ -230,6 +235,7 @@ static int compare_activities(const void *a,const void *b){
     }
     return 0;
 }
+/* Print tracked jobs grouped by their process group. */
 int execute_activities(void){
     BackgroundProcess *groups[MAX_BACKGROUND];
     size_t group_count=0;
@@ -293,6 +299,7 @@ static int copy_fd(int source_fd,int destination_fd){
         }
     }
 }
+/* Combine input redirections into one input stream. */
 static int prepare_input_stream(const Command *command){
     if(command->input_redirection_count==0){
         return -1;
@@ -342,6 +349,7 @@ static int setup_input_for_child(const Command *command){
     close(input_fd);
     return 0;
 }
+/* Open every output redirection requested by a command. */
 static int open_output_files(const Command *command,int **fds_out){
     size_t count=command->output_redirection_count;
     int *fds=malloc(count*sizeof(int));
@@ -407,6 +415,7 @@ static int is_regular_executable(const char *path){
     }
     return access(path,X_OK)==0;
 }
+/* Resolve a command and replace the child with it. */
 static void execute_command(const Command *command){
     const char *original=command->argv[0];
     if(original==NULL || original[0]=='\0'){
@@ -657,6 +666,7 @@ static int execute_simple_command(const Command *command,int background){
     }
     return result;
 }
+/* Create the pipeline, process groups and foreground/background job. */
 static int execute_pipeline(const Pipeline *pipeline){
     size_t command_count=pipeline->count;
     if(command_count==0){
@@ -829,6 +839,7 @@ static int execute_pipeline(const Pipeline *pipeline){
     free(pids);
     return result;
 }
+/* Execute pipelines in the order in which they were entered. */
 int execute_command_list(const CommandList *command_list){
     if(command_list==NULL || command_list->count==0){
         return 0;
@@ -843,6 +854,7 @@ int execute_command_list(const CommandList *command_list){
 }
 static volatile sig_atomic_t resume_timed_out=0;
 static pid_t resume_timeout_pgid=-1;
+/* Terminate the resumed job when its foreground timeout expires. */
 static void resume_timeout_handler(int signal){
     (void)signal;
     resume_timed_out=1;
@@ -928,6 +940,7 @@ static int wait_resumed_job(int job_number,pid_t pgid,int timeout){
     }
     return resume_timed_out ? 1 : 0;
 }
+/* Continue a stopped job in the foreground or background. */
 int execute_resume(int argc,char *const argv[]){
     if(argc<3 || argc>5 || argv==NULL || argv[1]==NULL || argv[2]==NULL){
         fprintf(stderr,"resume: invalid syntax\n");
@@ -1035,6 +1048,7 @@ static BackgroundProcess *find_job_for_ping(int job_number){
     }
     return NULL;
 }
+/* Send a signal to a tracked process or process group. */
 int execute_ping(int argc,char *const argv[]){
     if(argc!=3 || argv[1]==NULL || argv[2]==NULL){
         fprintf(stderr,"ping: invalid syntax\n");
@@ -1237,6 +1251,7 @@ static int snoop_wait_for_stop(pid_t pid){
     }
     return WIFSTOPPED(status) ? 0 : -1;
 }
+/* Trace syscall entry and exit stops and collect their timings. */
 static int snoop_trace(pid_t pid){
     SnoopStat *stats=NULL;
     size_t stat_count=0;
@@ -1326,6 +1341,7 @@ static int snoop_trace(pid_t pid){
     free(stats);
     return 0;
 }
+/* Start a command under ptrace and print its syscall summary. */
 static int execute_snoop_command(int argc,char *const argv[]){
     char command_path[PATH_MAX];
     if(argc<2){
@@ -1357,6 +1373,7 @@ static int execute_snoop_command(int argc,char *const argv[]){
     }
     return 0;
 }
+/* Attach to an existing process and trace its syscalls. */
 static int execute_snoop_pid(const char *pid_text){
     char *end=NULL;
     long value=strtol(pid_text,&end,10);
@@ -1379,6 +1396,7 @@ static int execute_snoop_pid(const char *pid_text){
     }
     return 0;
 }
+/* Parse snoop arguments and select command or PID tracing. */
 int execute_snoop(int argc,char *const argv[]){
     if(argc<2){
         fprintf(stderr,"snoop: invalid syntax\n");
@@ -1511,6 +1529,7 @@ static int spy_print_memory(pid_t pid){
     fclose(file);
     return 0;
 }
+/* Inspect the open files and mappings of a process. */
 int execute_spy(int argc,char *const argv[]){
     if(argc>2){
         fprintf(stderr,"spy: invalid syntax\n");

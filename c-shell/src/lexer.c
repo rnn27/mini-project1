@@ -1,12 +1,15 @@
 #include "lexer.h"
 #include <stdlib.h>
 #include <string.h>
+/* Identify characters that separate words. */
 static int is_space_char(char c){
     return c==' ' || c=='\t' || c=='\n' || c=='\r';
 }
+/* Identify shell operators that end a word. */
 static int is_special_char(char c){
     return c=='|' || c=='&' || c==';' || c=='<' || c=='>';
 }
+/* Append one token to the token list. */
 static int add_token(TokenList *list, TokenType type, const char *value, size_t length){
     Token *new_tokens=realloc( list->tokens, (list->count + 1) * sizeof(Token) );
     if(new_tokens==NULL){
@@ -24,6 +27,7 @@ static int add_token(TokenList *list, TokenType type, const char *value, size_t 
     list->count++;
     return 1;
 }
+/* Append one character while growing the word buffer. */
 static int add_char(char **buffer, size_t *length, size_t *capacity, char c){
     if(*length + 1 >=*capacity){
         size_t new_capacity= (*capacity==0) ? 16 : *capacity * 2;
@@ -38,6 +42,7 @@ static int add_char(char **buffer, size_t *length, size_t *capacity, char c){
    (*length)++;
     return 1;
 }
+/* Release all memory owned by a token list. */
 void free_tokens(TokenList *list){
     if(list==NULL){
         return;
@@ -49,6 +54,7 @@ void free_tokens(TokenList *list){
     list->tokens=NULL;
     list->count=0;
 }
+/* Convert one input line into shell tokens. */
 LexResult lex_line(const char *input, TokenList *result){
     result->tokens=NULL;
     result->count=0;

@@ -1,5 +1,6 @@
 #ifndef PARSER_H
 #define PARSER_H
+/* Parsed command and redirection structures. */
 #include "lexer.h"
 #include <stddef.h>
 typedef enum{

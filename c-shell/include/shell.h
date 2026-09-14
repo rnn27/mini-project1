@@ -1,5 +1,6 @@
 #ifndef SHELL_H
 #define SHELL_H
+/* Shared shell configuration and prompt interface. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
