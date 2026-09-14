@@ -882,7 +882,7 @@ static int execute_simple_command(const Command *command,int background){
     reclaim_terminal();
 
     if(has_stopped_jobs()){
-        printf("[%d] + Stopped %s\n",job,command->argv[0]);
+        printf("\n[%d] + Stopped %s\n", job,command->argv[0]);
         fflush(stdout);
     }
 
@@ -1113,7 +1113,7 @@ static int execute_pipeline(const Pipeline *pipeline){
     reclaim_terminal();
 
     if(has_stopped_jobs()){
-        printf("[%d] + Stopped %s\n",job,pipeline->commands[0].argv[0]);
+        printf("\n[%d] + Stopped %s\n", job,pipeline->commands[0].argv[0]);
         fflush(stdout);
     }
 
@@ -1139,4 +1139,221 @@ int execute_command_list(const CommandList *command_list){
     }
 
     return result;
+}
+static volatile sig_atomic_t resume_timed_out=0;
+static pid_t resume_timeout_pgid=-1;
+
+static void resume_timeout_handler(int signal){
+    (void)signal;
+    resume_timed_out=1;
+    if(resume_timeout_pgid>0){
+        (void)kill(-resume_timeout_pgid,SIGTERM);
+    }
+}
+
+static BackgroundProcess *find_job(int job_number){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].job_number==job_number){
+            return &background_processes[i];
+        }
+    }
+
+    return NULL;
+}
+
+static void mark_job_running(int job_number){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].job_number==job_number){
+            background_processes[i].stopped=0;
+        }
+    }
+}
+
+static int wait_resumed_job(int job_number,pid_t pgid,int timeout){
+    int status;
+    int remaining=0;
+
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].job_number==job_number){
+            remaining++;
+        }
+    }
+
+    resume_timed_out=0;
+    resume_timeout_pgid=timeout>=0 ? pgid : -1;
+
+    if(timeout>=0){
+        struct sigaction action;
+        memset(&action,0,sizeof(action));
+        action.sa_handler=resume_timeout_handler;
+        sigemptyset(&action.sa_mask);
+        action.sa_flags=SA_RESTART;
+        if(sigaction(SIGALRM,&action,NULL)<0){
+            resume_timeout_pgid=-1;
+            return -1;
+        }
+        alarm((unsigned int)timeout);
+    }
+
+    while(remaining>0){
+        pid_t result=waitpid(-pgid,&status,WUNTRACED);
+
+        if(result>0){
+            for(size_t i=0;i<MAX_BACKGROUND;i++){
+                if(!background_processes[i].active ||
+                   background_processes[i].job_number!=job_number ||
+                   background_processes[i].pid!=result){
+                    continue;
+                }
+
+                if(WIFSTOPPED(status)){
+                    background_processes[i].stopped=1;
+                    remaining--;
+                }else if(WIFEXITED(status) || WIFSIGNALED(status)){
+                    background_processes[i].active=0;
+                    remaining--;
+                }
+                break;
+            }
+            continue;
+        }
+
+        if(result<0 && errno==EINTR){
+            if(resume_timed_out){
+                continue;
+            }
+            continue;
+        }
+
+        if(result<0 && errno==ECHILD){
+            break;
+        }
+
+        if(result<0){
+            if(timeout>=0){
+                alarm(0);
+                resume_timeout_pgid=-1;
+            }
+            return -1;
+        }
+    }
+
+    if(timeout>=0){
+        alarm(0);
+        resume_timeout_pgid=-1;
+    }
+
+    return resume_timed_out ? 1 : 0;
+}
+
+int execute_resume(int argc,char *const argv[]){
+    if(argc<3 || argc>5 || argv==NULL || argv[1]==NULL || argv[2]==NULL){
+        fprintf(stderr,"resume: invalid syntax\n");
+        return -1;
+    }
+
+    const char *job_text=argv[1];
+    if(job_text[0]!='%' || job_text[1]=='\0'){
+        fprintf(stderr,"resume: invalid syntax\n");
+        return -1;
+    }
+
+    char *end=NULL;
+    long job_value=strtol(job_text+1,&end,10);
+    if(*end!='\0' || job_value<=0 || job_value>INT_MAX){
+        fprintf(stderr,"resume: invalid syntax\n");
+        return -1;
+    }
+
+    int job_number=(int)job_value;
+    const char *mode=argv[2];
+    int timeout=-1;
+
+    if(strcmp(mode,"bg")==0){
+        if(argc!=3){
+            fprintf(stderr,"resume: invalid syntax\n");
+            return -1;
+        }
+    }else if(strcmp(mode,"fg")==0){
+        if(argc==5){
+            if(strcmp(argv[3],"--timeout")!=0 || argv[4]==NULL || argv[4][0]=='\0'){
+                fprintf(stderr,"resume: invalid syntax\n");
+                return -1;
+            }
+
+            char *timeout_end=NULL;
+            long timeout_value=strtol(argv[4],&timeout_end,10);
+            if(*timeout_end!='\0' || timeout_value<0 || timeout_value>UINT_MAX){
+                fprintf(stderr,"resume: invalid syntax\n");
+                return -1;
+            }
+            timeout=(int)timeout_value;
+        }else if(argc!=3){
+            fprintf(stderr,"resume: invalid syntax\n");
+            return -1;
+        }
+    }else{
+        fprintf(stderr,"resume: invalid syntax\n");
+        return -1;
+    }
+
+    sigset_t oldset;
+    if(block_sigchld(&oldset)<0){
+        return -1;
+    }
+    cleanup_background_processes();
+
+    BackgroundProcess *job=find_job(job_number);
+    if(job==NULL){
+        restore_sigchld(&oldset);
+        fprintf(stderr,"resume: no such job\n");
+        return -1;
+    }
+
+    pid_t pgid=job->pgid;
+    char command[PATH_MAX];
+    strncpy(command,job->command,PATH_MAX-1);
+    command[PATH_MAX-1]='\0';
+
+    if(kill(-pgid,SIGCONT)<0){
+        restore_sigchld(&oldset);
+        fprintf(stderr,"resume: no such job\n");
+        return -1;
+    }
+
+    mark_job_running(job_number);
+    restore_sigchld(&oldset);
+
+    if(strcmp(mode,"bg")==0){
+        printf("[%d] + Running %s\n",job_number,command);
+        fflush(stdout);
+        return 0;
+    }
+
+    printf("%s\n",command);
+    fflush(stdout);
+
+    give_terminal_to(pgid);
+    int result=wait_resumed_job(job_number,pgid,timeout);
+    reclaim_terminal();
+
+    if(result<0){
+        return -1;
+    }
+
+    if(result==1){
+        printf("resume: job timed out\n");
+        fflush(stdout);
+        return 0;
+    }
+
+    if(find_job(job_number)!=NULL && has_stopped_jobs()){
+        printf("\n[%d] + Stopped %s\n", job_number,command);
+        fflush(stdout);
+    }
+
+    return 0;
 }

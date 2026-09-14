@@ -734,7 +734,8 @@ int is_intrinsic(const char *command){
            strcmp(command, "reveal")==0 ||
            strcmp(command, "peek")==0 ||
            strcmp(command, "locate")==0 ||
-           strcmp(command, "activities")==0;
+           strcmp(command, "activities")==0 ||
+           strcmp(command, "resume")==0;
 }
 
 int execute_intrinsic(int argc,
@@ -763,6 +764,10 @@ int execute_intrinsic(int argc,
 
     if(strcmp(argv[0], "activities")==0){
         return execute_activities();
+    }
+
+    if(strcmp(argv[0], "resume")==0){
+        return execute_resume(argc, argv);
     }
 
     return -1;
