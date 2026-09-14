@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -1472,6 +1473,256 @@ int execute_ping(int argc,char *const argv[]){
     restore_sigchld(&oldset);
     printf("Sent signal %ld to %s\n",signal_value,argv[1]);
     fflush(stdout);
+
+    return 0;
+}
+
+static const char *spy_file_type(const char *path){
+    struct stat st;
+
+    if(stat(path,&st)<0){
+        return "UNKNOWN";
+    }
+
+    if(S_ISREG(st.st_mode)){
+        return "REG";
+    }
+
+    if(S_ISDIR(st.st_mode)){
+        return "DIR";
+    }
+
+    if(S_ISCHR(st.st_mode)){
+        return "CHR";
+    }
+
+    if(S_ISBLK(st.st_mode)){
+        return "BLK";
+    }
+
+    if(S_ISFIFO(st.st_mode)){
+        return "FIFO";
+    }
+
+    if(S_ISSOCK(st.st_mode)){
+        return "SOCK";
+    }
+
+    return "UNKNOWN";
+}
+
+static void spy_print_entry(pid_t pid,const char *fd,const char *path){
+    printf("%d    %s    %s    %s\n",
+           (int)pid,fd,spy_file_type(path),path);
+}
+
+static int spy_read_link(pid_t pid,const char *name,
+                         char *path,size_t path_size){
+    char proc_path[PATH_MAX];
+
+    int written=snprintf(proc_path,sizeof(proc_path),
+                         "/proc/%d/%s",(int)pid,name);
+
+    if(written<0 || (size_t)written>=sizeof(proc_path)){
+        return -1;
+    }
+
+    ssize_t length=readlink(proc_path,path,path_size-1);
+
+    if(length<0){
+        return -1;
+    }
+
+    path[length]='\0';
+    return 0;
+}
+
+static int spy_print_memory(pid_t pid){
+    char maps_path[PATH_MAX];
+    snprintf(maps_path,sizeof(maps_path),
+             "/proc/%d/maps",(int)pid);
+
+    FILE *file=fopen(maps_path,"r");
+
+    if(file==NULL){
+        return -1;
+    }
+
+    char line[PATH_MAX*2];
+    char **seen=NULL;
+    size_t seen_count=0;
+    size_t seen_capacity=0;
+
+    while(fgets(line,sizeof(line),file)!=NULL){
+        unsigned long start;
+        unsigned long end;
+        unsigned long offset;
+        unsigned int dev_major;
+        unsigned int dev_minor;
+        unsigned long inode;
+        char permissions[8];
+        char path[PATH_MAX];
+
+        int fields=sscanf(line,
+                          "%lx-%lx %7s %lx %x:%x %lu %4095[^\n]",
+                          &start,&end,permissions,&offset,
+                          &dev_major,&dev_minor,&inode,path);
+
+        if(fields<7){
+            continue;
+        }
+
+        if(fields<8){
+            continue;
+        }
+
+        char *mapped_path=path;
+
+        while(*mapped_path==' ' || *mapped_path=='\t'){
+            mapped_path++;
+        }
+
+        if(mapped_path[0]!='/' || mapped_path[0]=='\0'){
+            continue;
+        }
+
+        int duplicate=0;
+
+        for(size_t i=0;i<seen_count;i++){
+            if(strcmp(seen[i],mapped_path)==0){
+                duplicate=1;
+                break;
+            }
+        }
+
+        if(duplicate){
+            continue;
+        }
+
+        if(seen_count==seen_capacity){
+            size_t new_capacity=seen_capacity==0 ? 32 : seen_capacity*2;
+
+            char **new_seen=realloc(seen,
+                                     new_capacity*sizeof(char *));
+
+            if(new_seen==NULL){
+                for(size_t i=0;i<seen_count;i++){
+                    free(seen[i]);
+                }
+
+                free(seen);
+                fclose(file);
+                return -1;
+            }
+
+            seen=new_seen;
+            seen_capacity=new_capacity;
+        }
+
+        seen[seen_count]=strdup(mapped_path);
+
+        if(seen[seen_count]==NULL){
+            for(size_t i=0;i<seen_count;i++){
+                free(seen[i]);
+            }
+
+            free(seen);
+            fclose(file);
+            return -1;
+        }
+
+        seen_count++;
+
+        spy_print_entry(pid,"mem",mapped_path);
+    }
+
+    for(size_t i=0;i<seen_count;i++){
+        free(seen[i]);
+    }
+
+    free(seen);
+    fclose(file);
+
+    return 0;
+}
+
+int execute_spy(int argc,char *const argv[]){
+    if(argc>2){
+        fprintf(stderr,"spy: invalid syntax\n");
+        return -1;
+    }
+
+    pid_t pid=getpid();
+
+    if(argc==2){
+        char *end=NULL;
+        long value=strtol(argv[1],&end,10);
+
+        if(argv[1][0]=='\0' ||
+           *end!='\0' ||
+           value<=0 ||
+           value>INT_MAX){
+            fprintf(stderr,"spy: no such process\n");
+            return -1;
+        }
+
+        pid=(pid_t)value;
+    }
+
+    char proc_path[PATH_MAX];
+
+    snprintf(proc_path,sizeof(proc_path),"/proc/%d",(int)pid);
+
+    struct stat st;
+
+    if(stat(proc_path,&st)<0 || !S_ISDIR(st.st_mode)){
+        fprintf(stderr,"spy: no such process\n");
+        return -1;
+    }
+
+    printf("PID    FD    TYPE    PATH\n");
+
+    char path[PATH_MAX];
+
+    if(spy_read_link(pid,"cwd",path,sizeof(path))==0){
+        spy_print_entry(pid,"cwd",path);
+    }
+
+    if(spy_read_link(pid,"exe",path,sizeof(path))==0){
+        spy_print_entry(pid,"txt",path);
+    }
+
+    spy_print_memory(pid);
+
+    char fd_path[PATH_MAX];
+
+    snprintf(fd_path,sizeof(fd_path),
+             "/proc/%d/fd",(int)pid);
+
+    DIR *directory=opendir(fd_path);
+
+    if(directory==NULL){
+        return 0;
+    }
+
+    struct dirent *entry;
+
+    while((entry=readdir(directory))!=NULL){
+        if(entry->d_name[0]=='.'){
+            continue;
+        }
+
+        char link_path[PATH_MAX];
+
+        snprintf(link_path,sizeof(link_path),
+                 "fd/%s",entry->d_name);
+
+        if(spy_read_link(pid,link_path,path,sizeof(path))==0){
+            spy_print_entry(pid,entry->d_name,path);
+        }
+    }
+
+    closedir(directory);
 
     return 0;
 }
