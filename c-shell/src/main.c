@@ -40,21 +40,37 @@ int main(void){
         return EXIT_FAILURE;
     }
 
+    if(initialize_job_control()<0){
+        perror("cshell: job control");
+        return EXIT_FAILURE;
+    }
+
     if(install_sigchld_handler()<0){
         perror("cshell: sigaction");
         return EXIT_FAILURE;
     }
 
     char input[SHELL_MAX_INPUT];
+    int eof_pending=0;
 
     while(1){
         print_prompt();
 
         if(fgets(input,sizeof(input),stdin)==NULL){
-            printf("\n");
-            break;
+            if(eof_pending || !has_stopped_jobs()){
+                send_sighup_to_jobs();
+                printf("\n");
+                break;
+            }
+
+            printf("cshell: there are stopped jobs\n");
+            fflush(stdout);
+            eof_pending=1;
+            clearerr(stdin);
+            continue;
         }
 
+        eof_pending=0;
         input[strcspn(input,"\n")]='\0';
 
         if(input[0]=='\0'){

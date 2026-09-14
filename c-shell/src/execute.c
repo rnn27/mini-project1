@@ -29,6 +29,103 @@ typedef struct{
 
 static BackgroundProcess background_processes[MAX_BACKGROUND];
 static int next_job_number=1;
+static pid_t shell_pgid=-1;
+static int shell_terminal=-1;
+static int job_control_enabled=0;
+
+static void set_default_signals(void){
+    struct sigaction action;
+
+    memset(&action,0,sizeof(action));
+    action.sa_handler=SIG_DFL;
+    sigemptyset(&action.sa_mask);
+
+    sigaction(SIGINT,&action,NULL);
+    sigaction(SIGTSTP,&action,NULL);
+    sigaction(SIGTTOU,&action,NULL);
+    sigaction(SIGCHLD,&action,NULL);
+}
+
+int initialize_job_control(void){
+    shell_terminal=STDIN_FILENO;
+
+    if(!isatty(shell_terminal)){
+        return 0;
+    }
+
+    shell_pgid=getpid();
+
+    if(setpgid(shell_pgid,shell_pgid)<0 && errno!=EACCES){
+        return -1;
+    }
+
+    struct sigaction action;
+    memset(&action,0,sizeof(action));
+    action.sa_handler=SIG_IGN;
+    sigemptyset(&action.sa_mask);
+
+    if(sigaction(SIGINT,&action,NULL)<0 ||
+       sigaction(SIGTSTP,&action,NULL)<0 ||
+       sigaction(SIGTTOU,&action,NULL)<0){
+        return -1;
+    }
+
+    if(tcsetpgrp(shell_terminal,shell_pgid)<0){
+        return -1;
+    }
+
+    job_control_enabled=1;
+    return 0;
+}
+
+static void give_terminal_to(pid_t pgid){
+    if(job_control_enabled){
+        (void)tcsetpgrp(shell_terminal,pgid);
+    }
+}
+
+static void reclaim_terminal(void){
+    if(job_control_enabled){
+        (void)tcsetpgrp(shell_terminal,shell_pgid);
+    }
+}
+
+int has_stopped_jobs(void){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active && background_processes[i].stopped){
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+void send_sighup_to_jobs(void){
+    pid_t groups[MAX_BACKGROUND];
+    size_t count=0;
+
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(!background_processes[i].active || background_processes[i].pgid<=0){
+            continue;
+        }
+
+        int found=0;
+        for(size_t j=0;j<count;j++){
+            if(groups[j]==background_processes[i].pgid){
+                found=1;
+                break;
+            }
+        }
+
+        if(!found){
+            groups[count++]=background_processes[i].pgid;
+        }
+    }
+
+    for(size_t i=0;i<count;i++){
+        (void)kill(-groups[i],SIGHUP);
+    }
+}
 
 static void write_number(char *buffer,size_t *length,pid_t value){
     char digits[32];
@@ -523,6 +620,48 @@ static int wait_for_pid(pid_t pid){
     return 0;
 }
 
+static int add_stopped_process(pid_t pid,pid_t pgid,int job_number,const char *command){
+    if(add_background_process(pid,pgid,job_number,command)<0){
+        return -1;
+    }
+
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].pid==pid &&
+           background_processes[i].job_number==job_number){
+            background_processes[i].stopped=1;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static int wait_foreground_process(pid_t pid,pid_t pgid,int job_number,const char *command){
+    int status;
+
+    while(1){
+        pid_t result=waitpid(pid,&status,WUNTRACED);
+
+        if(result==pid){
+            if(WIFSTOPPED(status)){
+                return add_stopped_process(pid,pgid,job_number,command);
+            }
+
+            return 0;
+        }
+
+        if(result<0 && errno==EINTR){
+            continue;
+        }
+
+        if(result<0){
+            perror("cshell: waitpid");
+            return -1;
+        }
+    }
+}
+
 /* Execute one command. */
 
 static int execute_simple_command(const Command *command,int background){
@@ -627,6 +766,8 @@ static int execute_simple_command(const Command *command,int background){
             _exit(1);
         }
 
+        set_default_signals();
+
         if(background){
             sigset_t set;
             sigemptyset(&set);
@@ -709,6 +850,9 @@ static int execute_simple_command(const Command *command,int background){
         close(input_fd);
     }
 
+    int job=next_job_number++;
+    give_terminal_to(pid);
+
     if(command->output_redirection_count>0){
         close(output_pipe[1]);
 
@@ -720,7 +864,8 @@ static int execute_simple_command(const Command *command,int background){
             }
 
             free(output_fds);
-            (void)wait_for_pid(pid);
+            (void)wait_foreground_process(pid,pid,job,command->argv[0]);
+            reclaim_terminal();
             return -1;
         }
 
@@ -733,7 +878,15 @@ static int execute_simple_command(const Command *command,int background){
         free(output_fds);
     }
 
-    return wait_for_pid(pid);
+    int result=wait_foreground_process(pid,pid,job,command->argv[0]);
+    reclaim_terminal();
+
+    if(has_stopped_jobs()){
+        printf("[%d] + Stopped %s\n",job,command->argv[0]);
+        fflush(stdout);
+    }
+
+    return result;
 }
 
 /* Execute a pipeline. */
@@ -826,6 +979,7 @@ static int execute_pipeline(const Pipeline *pipeline){
             if(setpgid(0,pgid)<0){
                 _exit(1);
             }
+            set_default_signals();
             const Command *command=&pipeline->commands[i];
 
             if(i>0){
@@ -946,13 +1100,21 @@ static int execute_pipeline(const Pipeline *pipeline){
         return 0;
     }
 
-    /* Wait for every foreground stage. */
-    int result=0;
+    int job=next_job_number++;
+    give_terminal_to(pids[0]);
 
+    int result=0;
     for(size_t i=0;i<command_count;i++){
-        if(wait_for_pid(pids[i])<0){
+        if(wait_foreground_process(pids[i],pids[0],job,pipeline->commands[i].argv[0])<0){
             result=-1;
         }
+    }
+
+    reclaim_terminal();
+
+    if(has_stopped_jobs()){
+        printf("[%d] + Stopped %s\n",job,pipeline->commands[0].argv[0]);
+        fflush(stdout);
     }
 
     free(pipes);
