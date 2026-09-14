@@ -722,7 +722,7 @@ static int execute_locate(int argc,
 }
 
 
-/* Intrinsic dispatch                                                        */
+/* Intrinsic dispatch */
 
 
 int is_intrinsic(const char *command){
@@ -735,6 +735,7 @@ int is_intrinsic(const char *command){
            strcmp(command, "peek")==0 ||
            strcmp(command, "locate")==0 ||
            strcmp(command, "activities")==0 ||
+           strcmp(command, "ping")==0 ||
            strcmp(command, "resume")==0;
 }
 
@@ -769,6 +770,8 @@ int execute_intrinsic(int argc,
     if(strcmp(argv[0], "resume")==0){
         return execute_resume(argc, argv);
     }
-
+    if(strcmp(argv[0], "ping")==0){
+        return execute_ping(argc, argv);
+    }
     return -1;
 }

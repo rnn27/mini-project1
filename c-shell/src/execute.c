@@ -1357,3 +1357,121 @@ int execute_resume(int argc,char *const argv[]){
 
     return 0;
 }
+
+static BackgroundProcess *find_process(pid_t pid){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].pid==pid){
+            return &background_processes[i];
+        }
+    }
+
+    return NULL;
+}
+
+static BackgroundProcess *find_job_for_ping(int job_number){
+    for(size_t i=0;i<MAX_BACKGROUND;i++){
+        if(background_processes[i].active &&
+           background_processes[i].job_number==job_number){
+            return &background_processes[i];
+        }
+    }
+
+    return NULL;
+}
+
+int execute_ping(int argc,char *const argv[]){
+    if(argc!=3 || argv[1]==NULL || argv[2]==NULL){
+        fprintf(stderr,"ping: invalid syntax\n");
+        return -1;
+    }
+
+    char *signal_end=NULL;
+    long signal_value=strtol(argv[2],&signal_end,10);
+
+    if(argv[2][0]=='-' ||
+       argv[2][0]=='\0' ||
+       *signal_end!='\0' ||
+       signal_value<0){
+        fprintf(stderr,"ping: invalid syntax\n");
+        return -1;
+    }
+
+    int signal_number=(int)(signal_value%64);
+
+    sigset_t oldset;
+    if(block_sigchld(&oldset)<0){
+        return -1;
+    }
+
+    cleanup_background_processes();
+
+    if(argv[1][0]=='%'){
+        char *job_end=NULL;
+        long job_value=strtol(argv[1]+1,&job_end,10);
+
+        if(argv[1][1]=='\0' ||
+           *job_end!='\0' ||
+           job_value<=0 ||
+           job_value>INT_MAX){
+            restore_sigchld(&oldset);
+            fprintf(stderr,"ping: no such process found\n");
+            return -1;
+        }
+
+        BackgroundProcess *job=
+            find_job_for_ping((int)job_value);
+
+        if(job==NULL){
+            restore_sigchld(&oldset);
+            fprintf(stderr,"ping: no such process found\n");
+            return -1;
+        }
+
+        pid_t pgid=job->pgid;
+
+        if(kill(-pgid,signal_number)<0){
+            restore_sigchld(&oldset);
+            fprintf(stderr,"ping: no such process found\n");
+            return -1;
+        }
+
+        restore_sigchld(&oldset);
+        printf("Sent signal %ld to %s\n",signal_value,argv[1]);
+        fflush(stdout);
+        return 0;
+    }
+
+    char *pid_end=NULL;
+    long pid_value=strtol(argv[1],&pid_end,10);
+
+    if(argv[1][0]=='\0' ||
+       *pid_end!='\0' ||
+       pid_value<=0 ||
+       pid_value>INT_MAX){
+        restore_sigchld(&oldset);
+        fprintf(stderr,"ping: no such process found\n");
+        return -1;
+    }
+
+    BackgroundProcess *process=
+        find_process((pid_t)pid_value);
+
+    if(process==NULL){
+        restore_sigchld(&oldset);
+        fprintf(stderr,"ping: no such process found\n");
+        return -1;
+    }
+
+    if(kill(process->pid,signal_number)<0){
+        restore_sigchld(&oldset);
+        fprintf(stderr,"ping: no such process found\n");
+        return -1;
+    }
+
+    restore_sigchld(&oldset);
+    printf("Sent signal %ld to %s\n",signal_value,argv[1]);
+    fflush(stdout);
+
+    return 0;
+}
