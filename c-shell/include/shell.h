@@ -1,6 +1,5 @@
 #ifndef SHELL_H
 #define SHELL_H
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,7 +9,5 @@
 #define PATH_MAX 4096
 #endif
 #define SHELL_MAX_INPUT 1024
-
 void print_prompt();
-
 #endif
