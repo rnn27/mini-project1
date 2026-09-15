@@ -14,6 +14,10 @@
 extern char shell_home[PATH_MAX];
 static char previous_directory[PATH_MAX]="";
 static int previous_directory_valid=0;
+static int is_directory(const char *path){
+    struct stat st;
+    return stat(path, &st)==0 && S_ISDIR(st.st_mode);
+}
 /* Build a path without overflowing the destination buffer. */
 static int join_path(char *result,size_t result_size,const char *directory,const char *name){
     if(result==NULL ||result_size==0 || directory==NULL || name==NULL){
@@ -484,7 +488,7 @@ static int execute_locate(int argc, char *const argv[]){
         const char *name= argv[i];
         int found=0;
         char local_path[PATH_MAX];
-        if(join_path(local_path, sizeof(local_path), ".", name)==0 && access(local_path, X_OK)==0){
+        if(join_path(local_path, sizeof(local_path), ".", name)==0 && access(local_path, X_OK)==0 && !is_directory(local_path)){
             char absolute_path[PATH_MAX];
             if(realpath(local_path, absolute_path) !=NULL){
                 printf("%s\n", absolute_path);
@@ -504,7 +508,7 @@ static int execute_locate(int argc, char *const argv[]){
             const char *dir= directory[0]=='\0'
                     ? "."
                     : directory;
-            if(join_path(candidate, sizeof(candidate), dir, name)==0 && access(candidate, X_OK)==0){
+            if(join_path(candidate, sizeof(candidate), dir, name)==0 && access(candidate, X_OK)==0 && !is_directory(candidate)){
                 char absolute_path[PATH_MAX];
                 if(realpath(candidate, absolute_path) !=NULL){
                     printf("%s\n", absolute_path);
@@ -515,7 +519,7 @@ static int execute_locate(int argc, char *const argv[]){
         }
         free(path_copy);
         if(!found){
-            fprintf(stderr, "locate: command not found(%s)\n", name);
+            fprintf(stderr, "locate: command not found (%s)\n", name);
         }
     }
     return 0;
