@@ -289,6 +289,7 @@ static int execute_peek(int argc,char *const argv[]){
     int n_flag=0;
     int r_flag=0;
     int arg_idx=1;
+
     while(arg_idx < argc && argv[arg_idx][0]=='-' && strcmp(argv[arg_idx], "-") !=0){
         for(size_t i=1; argv[arg_idx][i] !='\0'; i++){
             if(argv[arg_idx][i]=='n'){
@@ -302,46 +303,52 @@ static int execute_peek(int argc,char *const argv[]){
         }
         arg_idx++;
     }
+
     if(arg_idx==argc){
         char line[4096];
         size_t line_number=1;
         while(fgets(line, sizeof(line), stdin) !=NULL){
-            if(n_flag){
+            if(n_flag && line[0]!='\n' && line[0]!='\0'){
                 printf("%zu ", line_number++);
             }
             fputs(line, stdout);
         }
         return 0;
     }
+
     for(int file_index=arg_idx; file_index < argc; file_index++){
-        const char *filename= argv[file_index];
+        const char *filename=argv[file_index];
+
         if(strcmp(filename, "-")==0){
             char line[4096];
             size_t line_number=1;
             while(fgets(line, sizeof(line), stdin) !=NULL){
-                if(n_flag){
+                if(n_flag && line[0]!='\n' && line[0]!='\0'){
                     printf("%zu ", line_number++);
                 }
                 fputs(line, stdout);
             }
             continue;
         }
-        FILE *file= fopen(filename, "r");
+
+        FILE *file=fopen(filename, "r");
         if(file==NULL){
             fprintf(stderr, "peek: no such file or directory\n");
             continue;
         }
+
         struct stat st;
         if(stat(filename, &st)==0 && S_ISDIR(st.st_mode)){
             fclose(file);
             fprintf(stderr, "peek: is a directory\n");
             continue;
         }
+
         if(!r_flag){
             char line[4096];
             size_t line_number=1;
             while(fgets(line, sizeof(line), file) !=NULL){
-                if(n_flag){
+                if(n_flag && line[0]!='\n' && line[0]!='\0'){
                     printf("%zu ", line_number++);
                 }
                 fputs(line, stdout);
@@ -349,51 +356,118 @@ static int execute_peek(int argc,char *const argv[]){
             fclose(file);
             continue;
         }
-        char **lines=NULL;
-        size_t line_count=0;
-        size_t line_capacity=0;
+
+        int fd=fileno(file);
+        if(lseek(fd, 0, SEEK_END)<0){
+            fclose(file);
+            fprintf(stderr, "peek: seek error\n");
+            continue;
+        }
+
+        off_t position=lseek(fd, 0, SEEK_CUR);
+        const size_t chunk_size=4096;
         char buffer[4096];
-        while(fgets(buffer, sizeof(buffer), file) !=NULL){
-            if(line_count >=line_capacity){
-                size_t new_capacity= (line_capacity==0)
-                        ? 32
-                        : line_capacity * 2;
-                char **new_lines= realloc(lines, new_capacity * sizeof(char *));
-                if(new_lines==NULL){
-                    for(size_t i=0; i < line_count; i++){
-                        free(lines[i]);
+        char *line=NULL;
+        size_t line_length=0;
+        size_t line_capacity=0;
+        size_t line_number=0;
+        size_t total_lines=0;
+        int has_content=0;
+
+        lseek(fd, 0, SEEK_SET);
+        ssize_t count_bytes;
+        while((count_bytes=read(fd, buffer, sizeof(buffer)))>0){
+            for(ssize_t i=0; i<count_bytes; i++){
+                if(buffer[i]=='\n'){
+                    if(has_content){
+                        total_lines++;
+                        has_content=0;
                     }
-                    free(lines);
-                    fclose(file);
-                    return -1;
+                } else {
+                    has_content=1;
                 }
-                lines=new_lines;
-                line_capacity=new_capacity;
             }
-            lines[line_count]= strdup(buffer);
-            if(lines[line_count]==NULL){
-                for(size_t i=0; i < line_count; i++){
-                    free(lines[i]);
-                }
-                free(lines);
+        }
+        if(count_bytes<0){
+            free(line);
+            fclose(file);
+            fprintf(stderr, "peek: read error\n");
+            return -1;
+        }
+        if(has_content)
+            total_lines++;
+
+        lseek(fd, 0, SEEK_END);
+        position=lseek(fd, 0, SEEK_CUR);
+        line_number=total_lines;
+
+        while(position>0){
+            size_t amount=position < (off_t)chunk_size
+                    ? (size_t)position
+                    : chunk_size;
+            position-=amount;
+
+            if(lseek(fd, position, SEEK_SET)<0){
+                free(line);
                 fclose(file);
+                fprintf(stderr, "peek: seek error\n");
                 return -1;
             }
-            line_count++;
-        }
-        fclose(file);
-        for(size_t i=line_count; i > 0; i--){
-            size_t index=i - 1;
-            if(n_flag){
-                printf("%zu ", index + 1);
+
+            ssize_t bytes=read(fd, buffer, amount);
+            if(bytes<0){
+                free(line);
+                fclose(file);
+                fprintf(stderr, "peek: read error\n");
+                return -1;
             }
-            fputs(lines[index], stdout);
+
+            for(ssize_t i=bytes-1; i>=0; i--){
+                if(buffer[i]=='\n'){
+                    if(line_length>0){
+                        if(n_flag){
+                            printf("%zu ", line_number);
+                            if(line_number>0)
+                                line_number--;
+                        }
+                        for(size_t j=line_length; j>0; j--){
+                            putchar(line[j-1]);
+                        }
+                        putchar('\n');
+                        line_length=0;
+                    }
+                    continue;
+                }
+
+                if(line_length>=line_capacity){
+                    size_t new_capacity=line_capacity==0 ? 256 : line_capacity*2;
+                    char *new_line=realloc(line,new_capacity);
+                    if(new_line==NULL){
+                        free(line);
+                        fclose(file);
+                        return -1;
+                    }
+                    line=new_line;
+                    line_capacity=new_capacity;
+                }
+                line[line_length++]=buffer[i];
+            }
         }
-        for(size_t i=0; i < line_count; i++){
-            free(lines[i]);
+
+        if(line_length>0){
+            if(n_flag){
+                printf("%zu ", line_number);
+            }
+            for(size_t j=line_length; j>0; j--){
+                putchar(line[j-1]);
+            }
+            putchar('\n');
         }
-        free(lines);
+
+        free(line);
+        fclose(file);
     }
+
     return 0;
 }
 /* Search the current directory and PATH for each command. */
