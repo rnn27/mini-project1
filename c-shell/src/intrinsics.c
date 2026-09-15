@@ -42,26 +42,88 @@ static int change_directory(const char *path){
         fprintf(stderr,"hop: no such directory\n");
         return -1;
     }
-    if(chdir(path) < 0){
+        if(chdir(path) < 0){
         char history_file[PATH_MAX];
         if(join_path(history_file,sizeof(history_file),shell_home,".hop_history") < 0){
             fprintf(stderr,"hop: no such directory\n");
             return -1;
         }
-        FILE *file=fopen(history_file, "r");
+
+        FILE *file=fopen(history_file,"r");
+        char best_path[PATH_MAX]="";
+        int best_score=-1;
+
         if(file!=NULL){
             char line[PATH_MAX];
-            while(fgets(line,sizeof(line),file) !=NULL){
-                line[strcspn(line, "\n")]='\0';
-                if(strstr(line, path) !=NULL && access(line, F_OK)==0){
-                    if(chdir(line)==0){
-                        fclose(file);
-                        goto success;
-                    }
+            char **entries=NULL;
+            size_t count=0;
+            size_t capacity=0;
+
+            while(fgets(line,sizeof(line),file)!=NULL){
+                line[strcspn(line,"\n")]='\0';
+                if(line[0]=='\0'){
+                    continue;
                 }
+                if(count>=capacity){
+                    size_t new_capacity=capacity==0 ? 32 : capacity*2;
+                    char **new_entries=realloc(entries,new_capacity*sizeof(char *));
+                    if(new_entries==NULL){
+                        for(size_t i=0;i<count;i++){
+                            free(entries[i]);
+                        }
+                        free(entries);
+                        fclose(file);
+                        fprintf(stderr,"hop: no such directory\n");
+                        return -1;
+                    }
+                    entries=new_entries;
+                    capacity=new_capacity;
+                }
+                entries[count]=strdup(line);
+                if(entries[count]==NULL){
+                    for(size_t i=0;i<count;i++){
+                        free(entries[i]);
+                    }
+                    free(entries);
+                    fclose(file);
+                    fprintf(stderr,"hop: no such directory\n");
+                    return -1;
+                }
+                count++;
             }
             fclose(file);
+
+            for(size_t i=0;i<count;i++){
+                if(strstr(entries[i],path)==NULL || access(entries[i],F_OK)!=0){
+                    continue;
+                }
+
+                int frequency=0;
+                for(size_t j=0;j<count;j++){
+                    if(strcmp(entries[i],entries[j])==0){
+                        frequency++;
+                    }
+                }
+
+                int recency=(int)(count-i);
+                int score=frequency*1000+recency;
+
+                if(score>best_score){
+                    best_score=score;
+                    snprintf(best_path,sizeof(best_path),"%s",entries[i]);
+                }
+            }
+
+            for(size_t i=0;i<count;i++){
+                free(entries[i]);
+            }
+            free(entries);
         }
+
+        if(best_score>=0 && chdir(best_path)==0){
+            goto success;
+        }
+
         fprintf(stderr,"hop: no such directory\n");
         return -1;
     }
@@ -95,8 +157,7 @@ static int execute_hop(int argc, char *const argv[]){
             path=shell_home;
         } else if(strcmp(path, "-")==0){
             if(!previous_directory_valid){
-                fprintf(stderr, "hop: OLDPWD not set\n");
-                return -1;
+                continue;
             }
             path=previous_directory;
         }
@@ -211,9 +272,7 @@ static int execute_reveal(int argc, char *const argv[]){
                 if(stat(subpath, &statbuf)==0 && S_ISDIR(statbuf.st_mode)){
                     char *sub_argv[4];
                     sub_argv[0]="reveal";
-                    sub_argv[1]=show_all
-                                     ? "-a"
-                                     : "";
+                    sub_argv[1]=show_all ? "-at" : "-t";
                     sub_argv[2]=subpath;
                     sub_argv[3]=NULL;
                    (void)execute_reveal( 3, sub_argv );
