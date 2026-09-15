@@ -185,6 +185,15 @@ static int add_background_process(pid_t pid,pid_t pgid,int job_number,const char
     }
     return -1;
 }
+static void build_command_line(char *result,size_t result_size,char *const argv[],size_t argc){
+    result[0]='\0';
+    for(size_t i=0;i<argc;i++){
+        if(i>0){
+            strncat(result," ",result_size-strlen(result)-1);
+        }
+        strncat(result,argv[i],result_size-strlen(result)-1);
+    }
+}
 int install_sigchld_handler(void){
     struct sigaction action;
     memset(&action,0,sizeof(action));
@@ -616,7 +625,9 @@ static int execute_simple_command(const Command *command,int background){
     }
     if(background){
         int job=next_job_number++;
-        if(add_background_process(pid,pid,job,command->argv[0])<0){
+        char command_line[PATH_MAX];
+        build_command_line(command_line,sizeof(command_line),command->argv,command->argc);
+        if(add_background_process(pid,pid,job,command_line)<0){
             kill(pid,SIGTERM);
         }
         printf("[%d] %d\n",job,(int)pid);
@@ -648,7 +659,9 @@ static int execute_simple_command(const Command *command,int background){
                 close(output_fds[i]);
             }
             free(output_fds);
-            (void)wait_foreground_process(pid,pid,job,command->argv[0]);
+            char command_line[PATH_MAX];
+            build_command_line(command_line,sizeof(command_line),command->argv,command->argc);
+            (void)wait_foreground_process(pid,pid,job,command_line);
             reclaim_terminal();
             return -1;
         }
@@ -658,7 +671,9 @@ static int execute_simple_command(const Command *command,int background){
         }
         free(output_fds);
     }
-    int result=wait_foreground_process(pid,pid,job,command->argv[0]);
+    char command_line[PATH_MAX];
+    build_command_line(command_line,sizeof(command_line),command->argv,command->argc);
+    int result=wait_foreground_process(pid,pid,job,command_line);
     reclaim_terminal();
     if(has_stopped_jobs()){
         printf("\n[%d] + Stopped %s\n", job,command->argv[0]);
@@ -811,7 +826,9 @@ static int execute_pipeline(const Pipeline *pipeline){
     if(pipeline->background){
         int job=next_job_number++;
         for(size_t i=0;i<command_count;i++){
-            if(add_background_process(pids[i],pids[0],job,pipeline->commands[i].argv[0])<0){
+            char command_line[PATH_MAX];
+            build_command_line(command_line,sizeof(command_line),pipeline->commands[i].argv,pipeline->commands[i].argc);
+            if(add_background_process(pids[i],pids[0],job,command_line)<0){
                 kill(pids[i],SIGTERM);
             }
         }
@@ -826,7 +843,9 @@ static int execute_pipeline(const Pipeline *pipeline){
     give_terminal_to(pids[0]);
     int result=0;
     for(size_t i=0;i<command_count;i++){
-        if(wait_foreground_process(pids[i],pids[0],job,pipeline->commands[i].argv[0])<0){
+        char command_line[PATH_MAX];
+        build_command_line(command_line,sizeof(command_line),pipeline->commands[i].argv,pipeline->commands[i].argc);
+        if(wait_foreground_process(pids[i],pids[0],job,command_line)<0){
             result=-1;
         }
     }
