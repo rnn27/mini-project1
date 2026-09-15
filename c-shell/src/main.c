@@ -77,7 +77,7 @@ int main(void){
         }
         if(command_list.count>0 && command_list.pipelines[0].count==1 && !command_list.pipelines[0].background){
             Command *command=&command_list.pipelines[0].commands[0];
-            if(command->argc>0 && is_intrinsic(command->argv[0])){
+            if(command->argc>0 && command->input_redirection_count==0 && command->output_redirection_count==0 && is_intrinsic(command->argv[0])){
                 (void)execute_intrinsic((int)command->argc,command->argv);
                 free_command_list(&command_list);
                 free_tokens(&tokens);
